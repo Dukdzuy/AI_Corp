@@ -1,0 +1,499 @@
+@startuml Agent Aggregate - Detailed Class Diagram
+!theme plain
+title Agent Aggregate - State Machine, Strategy & Observer Patterns
+scale 1.0
+
+' ========================================
+' AGENT AGGREGATE
+' ========================================
+
+package "Agent Aggregate" <<aggregate>> {
+  
+  interface IAgent <<interface>> {
+    + getId(): string
+    + getRole(): AgentRole
+    + getState(): AgentState
+    + execute(context: AgentContext): Promise<AgentResult>
+    + addEventListener(observer: IAgentObserver): void
+    + removeEventListener(observer: IAgentObserver): void
+  }
+  
+  class Agent <<aggregate-root>> {
+    - id: string
+    - role: AgentRole
+    - name: string
+    - systemPrompt: string
+    - modelRouteConfig: ModelRouteConfig
+    - isActive: boolean
+    - createdAt: DateTime
+    - updatedAt: DateTime
+    - stateMachine: AgentStateMachine
+    - eventEmitter: AgentEventEmitter
+    --
+    **Identity**
+    + getId(): string
+    + getRole(): AgentRole
+    + getName(): string
+    --
+    **State Management**
+    + getState(): AgentState
+    + transitionState(newState: AgentState, reason?: string): void
+    + canTransitionTo(state: AgentState): boolean
+    + getStateHistory(): StateTransition[]
+    --
+    **Execution**
+    + execute(context: AgentContext): Promise<AgentResult>
+    + think(context: AgentContext): Promise<AgentThought>
+    + act(thought: AgentThought): Promise<AgentActionResult>
+    --
+    **Observer Management**
+    + addEventListener(observer: IAgentObserver): void
+    + removeEventListener(observer: IAgentObserver): void
+    + notifyObservers(event: AgentEvent): void
+    --
+    **Configuration**
+    + updateSystemPrompt(prompt: string): void
+    + updateModelConfig(config: ModelRouteConfig): void
+    + activate(): void
+    + deactivate(): void
+    --
+    **Validation**
+    + validate(): boolean
+    + isActive(): boolean
+    --
+    **Domain Events Emitted**
+    ~ emitStateChanged(): void
+    ~ emitThinkingStarted(): void
+    ~ emitThinkingCompleted(): void
+    ~ emitActionStarted(): void
+    ~ emitActionCompleted(): void
+  }
+  
+  abstract class BaseAgent<TOutput> {
+    # profile: RoleProfile
+    # thinkingStrategy: IThinkingStrategy
+    # actionStrategy: IActionStrategy<TOutput>
+    # websocketGateway: AppWebSocketGateway
+    # eventBus: EventBus
+    # stateMachine: AgentStateMachine
+    # eventEmitter: AgentEventEmitter
+    --
+    **Identity (from the profile)**
+    + getId(): string
+    + getRole(): AgentRole
+    + getProfile(): RoleProfile
+    + getState(): AgentState
+    --
+    **Template Method**
+    + execute(context: AgentContext): Promise<AgentResult<TOutput>>
+    # prepareContext(context): AgentContext
+    # isTransientError(error): boolean
+    --
+    **Observer / WebSocket**
+    + addEventListener(observer: IAgentObserver): void
+    + removeEventListener(observer: IAgentObserver): void
+    # emitThinking(projectId, taskId, thought): void
+    # emitStateChanged(from, to, projectId, reason?): void
+  }
+
+  class RoleProfile <<value-object>> {
+    + role: AgentRole
+    + displayName: string
+    + systemPrompt: string
+    + defaultModel: ModelRouteConfig
+    + memoryNamespaces: string[]
+    + taskTypes: string[]
+    --
+    + {static} create(props): RoleProfile
+    + primaryNamespace: string
+    + defaultTaskType: string
+    + supportsTaskType(taskType): boolean
+    + resolveTaskType(taskType): string
+    + modelConfig(): ModelRouteConfig
+  }
+
+  class CeoAgent
+  class BaAgent
+  class ArchitectAgent
+  class PmAgent
+  class DevAgent
+  class QcAgent
+  class QaAgent
+  class MarketingAgent
+
+  note "Each concrete agent only passes its profile\nand its two strategies to super():\n**CeoAgent extends BaseAgent<CeoOutput>**\nconstructor(thinking: CeoThinkingStrategy,\n            action: CeoActionStrategy, ws, eventBus)\n  super(CEO_PROFILE, thinking, action, ws, eventBus)" as N_AGENTS
+
+  class AgentStateMachine {
+    - currentState: AgentState
+    - history: StateTransition[]
+    - transitions: Map<AgentState, AgentState[]>
+    --
+    **State Queries**
+    + getCurrentState(): AgentState
+    + getPreviousState(): AgentState | null
+    + getValidTransitions(): AgentState[]
+    + getHistory(): StateTransition[]
+    + getTransitionCount(): number
+    --
+    **State Transitions**
+    + canTransitionTo(targetState: AgentState): boolean
+    + transitionTo(targetState: AgentState, reason?: string): void
+    --
+    **Utilities**
+    + getSummary(): object
+    + clearHistory(): void
+    + reset(): void
+  }
+  
+  class AgentEventEmitter {
+    - observers: Set<IAgentObserver>
+    --
+    **Observer Management**
+    + addObserver(observer: IAgentObserver): this
+    + removeObserver(observer: IAgentObserver): this
+    + removeAllObservers(): void
+    + getObserverCount(): number
+    + hasObserver(observer: IAgentObserver): boolean
+    --
+    **Event Emission**
+    + emitStateChanged(event: StateChangedEvent): void
+    + emitThinkingStarted(event: ThinkingEvent): void
+    + emitThinkingCompleted(event: ThinkingCompletedEvent): void
+    + emitActionStarted(event: ActionStartedEvent): void
+    + emitActionCompleted(event: ActionEvent): void
+    + emitApprovalRequested(event: ApprovalRequestedEvent): void
+    + emitApprovalReceived(event: ApprovalReceivedEvent): void
+    + emitError(event: ErrorEvent): void
+  }
+  
+  enum AgentState <<value-object>> {
+    IDLE
+    THINKING
+    ACTING
+    WAITING_APPROVAL
+    ERROR
+    COMPLETED
+    --
+    + isTerminal(): boolean
+    + canTransitionTo(target: AgentState): boolean
+  }
+  
+  enum AgentRole <<value-object>> {
+    CEO
+    PM
+    DEV
+    QA
+    MARKETING
+    BA
+    ARCHITECT
+    QC
+    --
+    + getDisplayName(): string
+    + getDescription(): string
+  }
+  
+  class ModelRouteConfig <<value-object>> {
+    + provider: string
+    + model: string
+    + fallbackProvider: string | null
+    + tags: string[]
+    --
+    + equals(other: ModelRouteConfig): boolean
+    + validate(): boolean
+    + toJSON(): object
+  }
+  
+  class AgentMemory <<entity>> {
+    - id: string
+    - agentId: string
+    - agentRole: AgentRole
+    - namespace: string
+    - content: string
+    - embedding: float[] | null
+    - importance: number
+    - metadata: JSON
+    - createdAt: DateTime
+    --
+    **Embedding**
+    + generateEmbedding(): Promise<float[]>
+    + hasEmbedding(): boolean
+    --
+    **Relevance**
+    + calculateRelevance(query: string): number
+    + calculateSimilarity(other: AgentMemory): number
+    --
+    **Validation**
+    + validate(): boolean
+    + validateImportance(): boolean
+  }
+  
+  class AgentMessage <<entity>> {
+    - id: string
+    - projectId: string
+    - fromAgentId: string
+    - fromRole: AgentRole
+    - toRole: AgentRole | null
+    - message: string
+    - messageType: MessageType
+    - metadata: JSON
+    - createdAt: DateTime
+    --
+    **Queries**
+    + isBroadcast(): boolean
+    + isDirectMessage(): boolean
+    + isFromAgent(role: AgentRole): boolean
+    + isToAgent(role: AgentRole): boolean
+    --
+    **Validation**
+    + validate(): boolean
+  }
+}
+
+' ========================================
+' STRATEGY PATTERN
+' ========================================
+
+package "Strategy Pattern" <<pattern>> {
+  
+  interface IThinkingStrategy <<interface>> {
+    + think(context: AgentContext): Promise<AgentThought>
+  }
+  
+  interface IActionStrategy<TOutput> <<interface>> {
+    + act(context: AgentContext, thought: AgentThought): Promise<AgentActionResult<TOutput>>
+  }
+
+  class "CeoThinkingStrategy\nBAThinkingStrategy\nArchitectThinkingStrategy\nPmThinkingStrategy\nDevThinkingStrategy\nQcThinkingStrategy\nQaThinkingStrategy\nMarketingThinkingStrategy" as ThinkingStrategies <<ConcreteStrategy>> {
+    + think(context): Promise<AgentThought>
+    --
+    recalls memories from profile.primaryNamespace
+  }
+
+  class "CeoActionStrategy → CeoOutput\nBAActionStrategy → BaOutput\nArchitectActionStrategy → ArchitectOutput\nPmActionStrategy → PmOutput\nDevActionStrategy → DevOutput\nQcActionStrategy → QcOutput\nQaActionStrategy → QaOutput\nMarketingActionStrategy → MarketingOutput" as ActionStrategies <<ConcreteStrategy>> {
+    + act(context, thought): Promise<AgentActionResult<XxxOutput>>
+    --
+    LLM via AgentLLMService.providerFor(profile)
+  }
+
+  class AgentLLMService <<facade>> {
+    + providerFor(profile: RoleProfile, projectId?): {provider, model, systemPrompt}
+  }
+}
+
+package "Registry" <<pattern>> {
+  class "AGENTS token" as AgentsToken <<multi-provider>> {
+    useFactory: (...agents) => agents
+    inject: AGENT_CLASSES
+  }
+
+  class AgentOrchestratorService {
+    - agentRegistry: Map<string, IAgent>
+    --
+    + constructor(@Inject(AGENTS) agents: IAgent[], messages)
+    + invokeAgent(role, context): Promise<AgentResult>
+    + getAvailableRoles(): string[]
+    + hasAgent(role): boolean
+  }
+}
+
+' ========================================
+' OBSERVER PATTERN
+' ========================================
+
+package "Observer Pattern" <<pattern>> {
+  
+  interface IAgentObserver <<interface>> {
+    + onStateChanged?(event: StateChangedEvent): void
+    + onThinkingStarted?(event: ThinkingEvent): void
+    + onThinkingCompleted?(event: ThinkingCompletedEvent): void
+    + onActionStarted?(event: ActionStartedEvent): void
+    + onActionCompleted?(event: ActionEvent): void
+    + onApprovalRequested?(event: ApprovalRequestedEvent): void
+    + onApprovalReceived?(event: ApprovalReceivedEvent): void
+    + onError?(event: ErrorEvent): void
+  }
+  
+  class WebSocketGateway {
+    + onStateChanged(event: StateChangedEvent): void
+    + onThinkingStarted(event: ThinkingEvent): void
+    + onActionCompleted(event: ActionEvent): void
+    - broadcast(message: object): void
+    - sendToProject(projectId: string, message: object): void
+  }
+  
+  class WorkflowEngine {
+    + onActionCompleted(event: ActionEvent): void
+    + onError(event: ErrorEvent): void
+    - executeNextStep(taskId: string): void
+    - failWorkflow(taskId: string, error: Error): void
+  }
+  
+  class AuditLogger {
+    + onStateChanged(event: StateChangedEvent): void
+    + onActionCompleted(event: ActionEvent): void
+    + onError(event: ErrorEvent): void
+    - logEvent(event: AgentEvent): void
+  }
+  
+  class MetricsCollector {
+    + onActionCompleted(event: ActionEvent): void
+    - recordMetric(metric: Metric): void
+  }
+}
+
+' ========================================
+' RELATIONSHIPS
+' ========================================
+
+' Interface implementation
+IAgent <|.. Agent : implements
+IAgent <|.. BaseAgent : implements
+
+' Inheritance hierarchy (8 roles)
+BaseAgent <|-- CeoAgent
+BaseAgent <|-- BaAgent
+BaseAgent <|-- ArchitectAgent
+BaseAgent <|-- PmAgent
+BaseAgent <|-- DevAgent
+BaseAgent <|-- QcAgent
+BaseAgent <|-- QaAgent
+BaseAgent <|-- MarketingAgent
+N_AGENTS .. CeoAgent
+
+' Role profile and registry
+BaseAgent --> RoleProfile : identity & defaults
+RoleProfile --> AgentRole
+RoleProfile --> ModelRouteConfig : default model
+AgentsToken o-- "8" BaseAgent : collects
+AgentOrchestratorService --> "0..*" IAgent : looks up by role
+AgentOrchestratorService ..> AgentsToken : injected
+BaseAgent *-- AgentStateMachine
+BaseAgent *-- AgentEventEmitter
+
+' Agent composition
+Agent *-- AgentStateMachine : contains
+Agent *-- AgentEventEmitter : contains
+Agent "1" *-- "0..*" AgentMemory : contains
+Agent "1" *-- "0..*" AgentMessage : sends
+
+' Value object associations
+Agent --> AgentRole : has
+Agent --> AgentState : has
+Agent --> ModelRouteConfig : configured with
+AgentMemory --> AgentRole : belongs to
+
+' Strategy pattern
+IThinkingStrategy <|.. ThinkingStrategies
+IActionStrategy <|.. ActionStrategies
+ActionStrategies --> AgentLLMService
+AgentLLMService ..> RoleProfile : default model + persona
+
+BaseAgent o-- IThinkingStrategy : thinkingStrategy
+BaseAgent o-- IActionStrategy : actionStrategy
+
+' Observer pattern
+AgentEventEmitter o-- "0..*" IAgentObserver : notifies
+IAgentObserver <|.. WebSocketGateway : implements
+IAgentObserver <|.. WorkflowEngine : implements
+IAgentObserver <|.. AuditLogger : implements
+IAgentObserver <|.. MetricsCollector : implements
+
+' ========================================
+' BUSINESS RULES
+' ========================================
+
+note bottom of Agent
+  **Aggregate Root Invariants**:
+  
+  1. Agent role must be unique (Req 17.1)
+  2. Agent can only be in one state at a time
+  3. State transitions must follow state machine rules
+  4. Only active agents can execute tasks (Rule 5)
+  5. Agent must have valid system prompt and model config
+  6. Model config must specify valid provider and model
+  
+  **Consistency Boundary**:
+  - All memories belong to exactly one agent
+  - All messages sent by one agent
+  - State transitions recorded in history
+end note
+
+note bottom of AgentStateMachine
+  **Valid State Transitions**:
+  
+  IDLE → THINKING
+  THINKING → ACTING | ERROR
+  ACTING → COMPLETED | WAITING_APPROVAL | ERROR
+  WAITING_APPROVAL → ACTING | COMPLETED | ERROR
+  ERROR → IDLE (recovery)
+  COMPLETED → IDLE (reuse)
+  
+  **Invariants**:
+  - Cannot transition to same state
+  - All transitions validated before execution
+  - History records all transitions with timestamps
+end note
+
+note bottom of AgentMemory
+  **Entity Invariants** (Req 17.3):
+  
+  1. Memory must belong to valid agent
+  2. Importance must be between 1 and 10 inclusive
+  3. Namespace must be non-empty
+  4. Content must be non-empty
+  5. Embedding is optional (generated on demand)
+  6. Importance determines retrieval priority
+  
+  **Vector Search**:
+  - Embedding stored as JSON array of floats
+  - Semantic search uses cosine similarity
+  - HNSW index for performance (pgvector)
+end note
+
+note top of BaseAgent
+  **Template Method Pattern**:
+  
+  execute() defines the skeleton:
+  1. Resolve context.taskType against the RoleProfile
+  2. IDLE → THINKING: thinkingStrategy.think()
+  3. THINKING → ACTING: actionStrategy.act()
+  4. ACTING → COMPLETED → IDLE (domain events published)
+  5. any → ERROR (→ IDLE only for transient errors)
+  
+  Role-specific behaviour lives only in the
+  injected strategies; there is no abstract
+  think()/act() on the agent any more.
+end note
+
+note right of AgentOrchestratorService
+  **Open/Closed (Task 11)**:
+  before: constructor took 8 concrete agent classes
+  after: depends on IAgent[] from the AGENTS token.
+  A 9th role = profile + 2 strategies + 1 entry in
+  AGENT_CLASSES; orchestrator and engine unchanged.
+end note
+
+note right of IThinkingStrategy
+  **Strategy Pattern Benefits**:
+  
+  - Runtime behavior swapping
+  - Multiple strategies per role possible
+  - Easy to test in isolation
+  - Follows Open/Closed Principle
+  - New strategies without modifying agents
+end note
+
+note right of IAgentObserver
+  **Observer Pattern Benefits**:
+  
+  - Decoupled event handling
+  - Multiple observers can subscribe
+  - Observers don't affect agent behavior
+  - Easy to add new observers
+  - Error in one observer doesn't affect others
+  
+  **All methods optional** (ISP):
+  Observers implement only needed methods.
+end note
+
+@enduml

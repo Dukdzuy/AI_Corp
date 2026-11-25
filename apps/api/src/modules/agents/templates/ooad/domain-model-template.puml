@@ -1,0 +1,35 @@
+@startuml
+title Domain Model
+
+{{#each entities}}
+class {{pascalCase name}} <<Entity>> {
+  - id: {{idType}}
+  {{#each attributes}}
+  - {{name}}: {{type}}
+  {{/each}}
+  {{#if methods.length}}
+  --
+  {{#each methods}}
+  + {{name}}({{params}}): {{returnType}}
+  {{/each}}
+  {{/if}}
+}
+
+{{/each}}
+{{#each valueObjects}}
+class {{pascalCase name}} <<Value Object>> {
+  {{#each attributes}}
+  - {{name}}: {{type}}
+  {{/each}}
+}
+
+{{/each}}
+{{#each aggregates}}
+note top of {{pascalCase root}} : Aggregate root{{#if children.length}} ({{join children ", "}}){{/if}}
+{{/each}}
+
+{{#each relationships}}
+{{pascalCase from}} {{type}} {{pascalCase to}}{{#if label}} : {{label}}{{/if}}
+{{/each}}
+
+@enduml

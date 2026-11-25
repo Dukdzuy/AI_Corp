@@ -1,0 +1,124 @@
+@startuml SM-001-agent-states
+title Agent State Machine - State Transitions
+'Based on: apps/api/src/domain/agent/AgentStateMachine.ts
+'Design Pattern: State Pattern
+
+[*] --> IDLE : Agent Created
+
+state IDLE {
+  [*] --> CheckingQueue
+  CheckingQueue --> WaitingForTask
+}
+IDLE : <b>Entry:</b> Release resources, clear context
+IDLE : <b>Exit:</b> Log assignment timestamp
+IDLE : <b>Internal:</b> Heartbeat every 30s
+
+state THINKING {
+  [*] --> AnalyzingProblem
+  AnalyzingProblem --> FormulatingPlan
+  FormulatingPlan --> ValidatingPlan
+}
+THINKING : <b>Entry:</b> Load task context, initialize session
+THINKING : <b>Exit:</b> Persist execution plan
+THINKING : <b>Internal:</b> Query LLM for reasoning
+
+state ACTING {
+  [*] --> ExecutingActions
+  ExecutingActions --> CallingTools
+  CallingTools --> ProcessingResults
+}
+ACTING : <b>Entry:</b> Start action timer, log plan
+ACTING : <b>Exit:</b> Save intermediate results
+ACTING : <b>Internal:</b> Update progress metrics
+
+state WAITING_APPROVAL {
+  [*] --> PendingReview
+  PendingReview --> AwaitingResponse
+}
+WAITING_APPROVAL : <b>Entry:</b> Send approval request, pause execution
+WAITING_APPROVAL : <b>Exit:</b> Log approval decision
+WAITING_APPROVAL : <b>Internal:</b> Check timeout every 5min
+
+state ERROR {
+  [*] --> LoggingError
+  LoggingError --> DeterminingRecovery
+}
+ERROR : <b>Entry:</b> Capture error details, rollback partial changes
+ERROR : <b>Exit:</b> Clear error state
+ERROR : <b>Internal:</b> Notify monitoring system
+
+state COMPLETED {
+  [*] --> GeneratingReport
+  GeneratingReport --> CleaningUp
+}
+COMPLETED : <b>Entry:</b> Finalize results, calculate cost
+COMPLETED : <b>Exit:</b> Archive session data
+COMPLETED : <b>Internal:</b> Store lessons learned
+
+IDLE --> THINKING : <b>taskAssigned()</b>\n[guard: task != null]\naction: loadContext()
+
+THINKING --> ACTING : <b>planFormulated()</b>\n[guard: plan.isValid()]\naction: startExecution()
+
+THINKING --> ERROR : <b>llmError()</b>\n[guard: retries exhausted]\naction: captureError()
+
+ACTING --> COMPLETED : <b>actionsCompleted()</b>\n[guard: allActionsSuccess()]\naction: finalizeResults()
+
+ACTING --> WAITING_APPROVAL : <b>approvalRequired()</b>\n[guard: requiresHumanReview()]\naction: pauseAndRequest()
+
+ACTING --> ERROR : <b>toolError()</b>\n[guard: criticalFailure]\naction: rollback()
+
+WAITING_APPROVAL --> ACTING : <b>approved()</b>\n[guard: decision == APPROVED]\naction: resumeExecution()
+
+WAITING_APPROVAL --> COMPLETED : <b>autoComplete()</b>\n[guard: canAutoComplete()]\naction: skipApproval()
+
+WAITING_APPROVAL --> ERROR : <b>rejected()</b>\n[guard: decision == REJECTED]\naction: abortTask()
+
+ERROR --> IDLE : <b>recover()</b>\n[guard: canRecover()]\naction: reset()
+
+COMPLETED --> IDLE : <b>reuse()</b>\n[guard: agentPoolEnabled]\naction: reset()
+
+COMPLETED --> [*] : <b>terminate()</b>\n[guard: noMoreWork]
+
+ERROR --> [*] : <b>terminate()</b>\n[guard: fatalError]
+
+note right of IDLE
+  <b>Invariant:</b> No active task assigned
+  <b>SOLID:</b> Single Responsibility
+  - Only manages own lifecycle
+end note
+
+note right of THINKING
+  <b>Invariant:</b> Has task context loaded
+  <b>Pattern:</b> Strategy Pattern
+  - Different reasoning strategies
+  - Based on task complexity
+end note
+
+note right of ACTING
+  <b>Invariant:</b> Has valid execution plan
+  <b>Pattern:</b> Command Pattern
+  - Actions as command objects
+  - Supports undo/redo
+end note
+
+note right of WAITING_APPROVAL
+  <b>Invariant:</b> Approval request sent
+  <b>Timeout:</b> Auto-reject after 2 hours
+  <b>SOLID:</b> Open/Closed Principle
+  - Extensible approval types
+end note
+
+note left of ERROR
+  <b>Invariant:</b> Error details captured
+  <b>Recovery:</b> Max 3 retry attempts
+  <b>Pattern:</b> Circuit Breaker
+  - Prevents cascading failures
+end note
+
+note left of COMPLETED
+  <b>Invariant:</b> All work done
+  <b>Data:</b> Results persisted
+  <b>Cost:</b> Usage metrics recorded
+end note
+
+@enduml

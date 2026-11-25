@@ -1,0 +1,144 @@
+@startuml Strategy Pattern - AI-CORP
+!theme plain
+title Design Pattern - Strategy Pattern (Thinking & Action Strategies)
+scale 1.0
+
+note as N1
+  **Strategy Pattern (Gang of Four)**
+
+  **Intent**: Define a family of algorithms, encapsulate each one,
+  and make them interchangeable.
+
+  **Structure in AI-CORP**:
+  - Context: BaseAgent<TOutput>
+  - Strategy: IThinkingStrategy, IActionStrategy<TOutput>
+  - ConcreteStrategy: one thinking + one action strategy per role
+    (apps/api/src/modules/agents/strategies/)
+
+  Role-specific behaviour lives **only** in strategies; the agent
+  classes just pass their RoleProfile and strategies to BaseAgent.
+end note
+
+package "Thinking Strategy" <<Strategy Pattern>> {
+
+  interface IThinkingStrategy <<Strategy>> {
+    + think(context: AgentContext): Promise<AgentThought>
+  }
+
+  class CeoThinkingStrategy <<ConcreteStrategy>> {
+    planMilestones | complete_project
+  }
+  class BAThinkingStrategy <<ConcreteStrategy>>
+  class ArchitectThinkingStrategy <<ConcreteStrategy>>
+  class PmThinkingStrategy <<ConcreteStrategy>>
+  class DevThinkingStrategy <<ConcreteStrategy>>
+  class QcThinkingStrategy <<ConcreteStrategy>>
+  class QaThinkingStrategy <<ConcreteStrategy>>
+  class MarketingThinkingStrategy <<ConcreteStrategy>>
+
+  IThinkingStrategy <|.. CeoThinkingStrategy
+  IThinkingStrategy <|.. BAThinkingStrategy
+  IThinkingStrategy <|.. ArchitectThinkingStrategy
+  IThinkingStrategy <|.. PmThinkingStrategy
+  IThinkingStrategy <|.. DevThinkingStrategy
+  IThinkingStrategy <|.. QcThinkingStrategy
+  IThinkingStrategy <|.. QaThinkingStrategy
+  IThinkingStrategy <|.. MarketingThinkingStrategy
+}
+
+package "Action Strategy" <<Strategy Pattern>> {
+
+  interface "IActionStrategy<TOutput>" as IActionStrategy <<Strategy>> {
+    + act(context: AgentContext, thought: AgentThought): Promise<AgentActionResult<TOutput>>
+  }
+
+  class CeoActionStrategy <<ConcreteStrategy>> {
+    → CeoOutput (milestones / close-out report)
+  }
+  class BAActionStrategy <<ConcreteStrategy>> {
+    → BaOutput (use cases, use case diagram)
+  }
+  class ArchitectActionStrategy <<ConcreteStrategy>> {
+    → ArchitectOutput (domain model, diagrams, skeleton)
+  }
+  class PmActionStrategy <<ConcreteStrategy>> {
+    → PmOutput (one task per use case)
+  }
+  class DevActionStrategy <<ConcreteStrategy>> {
+    → DevOutput (code written to the workspace)
+  }
+  class QcActionStrategy <<ConcreteStrategy>> {
+    → QcOutput (acceptance tests, traceability, qc_passed)
+  }
+  class QaActionStrategy <<ConcreteStrategy>> {
+    → QaOutput (design-conformance verdict, qa_approved)
+  }
+  class MarketingActionStrategy <<ConcreteStrategy>> {
+    → MarketingOutput (release announcement)
+  }
+
+  IActionStrategy <|.. CeoActionStrategy
+  IActionStrategy <|.. BAActionStrategy
+  IActionStrategy <|.. ArchitectActionStrategy
+  IActionStrategy <|.. PmActionStrategy
+  IActionStrategy <|.. DevActionStrategy
+  IActionStrategy <|.. QcActionStrategy
+  IActionStrategy <|.. QaActionStrategy
+  IActionStrategy <|.. MarketingActionStrategy
+}
+
+package "Context" <<Context>> {
+
+  abstract class "BaseAgent<TOutput>" as BaseAgent <<Context>> {
+    # profile: RoleProfile
+    # thinkingStrategy: IThinkingStrategy
+    # actionStrategy: IActionStrategy<TOutput>
+    --
+    + execute(context): Promise<AgentResult<TOutput>>
+  }
+
+  class RoleProfile <<value-object>> {
+    role, displayName, systemPrompt,
+    defaultModel, memoryNamespaces, taskTypes
+  }
+
+  class CeoAgent {
+    constructor(CeoThinkingStrategy, CeoActionStrategy, ws, eventBus)
+  }
+  class "BaAgent, ArchitectAgent, PmAgent,\nDevAgent, QcAgent, QaAgent, MarketingAgent" as OtherAgents
+
+  BaseAgent <|-- CeoAgent
+  BaseAgent <|-- OtherAgents
+  BaseAgent --> RoleProfile
+}
+
+package "Shared collaborators" {
+  class AgentLLMService <<Facade>> {
+    + providerFor(profile: RoleProfile, projectId?): {provider, model, systemPrompt}
+  }
+  class MemoryService
+}
+
+BaseAgent o-- IThinkingStrategy : 1
+BaseAgent o-- IActionStrategy : 1
+IActionStrategy ..> AgentLLMService : concrete strategies use
+IThinkingStrategy ..> MemoryService : recall profile.primaryNamespace
+AgentLLMService ..> RoleProfile : default model + persona
+
+note bottom of BaseAgent
+  **execute() (Template Method)**
+  1. context.taskType := profile.resolveTaskType(taskType)
+  2. IDLE → THINKING: thought = thinkingStrategy.think(context)
+  3. THINKING → ACTING: action = actionStrategy.act(context, thought)
+  4. ACTING → COMPLETED → IDLE, publish TaskCompleted / AgentCompletedTask
+  5. any → ERROR (→ IDLE for transient errors), publish AgentErrorEvent
+end note
+
+note right of AgentLLMService
+  Resolves the model saved in Agent Settings
+  (fallback: profile.defaultModel) and wraps it in
+  UsageTrackingLLMProvider, so every strategy call
+  is costed against its project.
+end note
+
+@enduml

@@ -1,0 +1,261 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { IActionStrategy } from '../../../domain/agent/interfaces/IActionStrategy.interface';
+import { AgentContext, AgentThought, AgentActionResult } from '../../../domain/common/types';
+import { MemoryService } from '../../memory/memory.service';
+import { AgentLLMService } from '../services/agent-llm.service';
+import { AppWebSocketGateway } from '../../websocket/websocket.gateway';
+import { BaAgentOutput, BaClarifyOutput, BaOutput } from '../../../domain/agent/AgentOutputs';
+import { BA_PROFILE } from '../profiles';
+import { OOADArtifactService } from '../services/ooad-artifact.service';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { UseCaseDataSchema, UseCaseData, UseCaseItemSchema } from '../schemas/ooad.schema';
+import { useCaseIdOf } from '../services/collaboration-replies';
+import { OOADSchemaValidationError } from '../errors/OOADSchemaValidationError';
+
+@Injectable()
+export class BAActionStrategy implements IActionStrategy<BaAgentOutput> {
+  private readonly logger = new Logger(BAActionStrategy.name);
+
+  constructor(
+    private readonly memoryService: MemoryService,
+    private readonly agentLLM: AgentLLMService,
+    private readonly websocketGateway: AppWebSocketGateway,
+    private readonly ooadArtifacts: OOADArtifactService,
+    private readonly prisma: PrismaService
+  ) {}
+
+  async act(context: AgentContext, thought: AgentThought): Promise<AgentActionResult<BaAgentOutput>> {
+    if (context.taskType === 'clarifyUseCase') {
+      return this.clarify(context);
+    }
+    return this.generateUseCases(context, thought);
+  }
+
+  /**
+   * clarification_loop (Task 15): answers a REQUEST from DEV/QC about one use case and, when the
+   * answer changes it, updates that use case in ooadMetadata and re-renders the use case docs.
+   */
+  private async clarify(context: AgentContext): Promise<AgentActionResult<BaClarifyOutput>> {
+    const question = (context.clarificationQuestion || context.task || '').trim();
+    const projectId = context.projectId;
+    const project = projectId
+      ? await this.prisma.project.findUnique({ where: { id: projectId }, select: { ooadMetadata: true } })
+      : null;
+    const metadata = ((project?.ooadMetadata as any) || {}) as Record<string, any>;
+    const useCases: any[] = Array.isArray(metadata.useCases) ? metadata.useCases : [];
+    const useCaseId = useCaseIdOf(question);
+    const useCase = useCases.find(uc => uc.id === useCaseId);
+
+    const prompt = `A teammate asks a question about the requirements.
+
+QUESTION: ${question}
+${useCase ? `\nCURRENT USE CASE (JSON):\n${JSON.stringify(useCase, null, 2)}\n` : `\nUSE CASES: ${useCases.map(uc => `${uc.id} ${uc.name}`).join('; ') || '(none recorded)'}\n`}
+Answer in 1-3 sentences. If the answer changes the use case (a missing step, alternative or exception flow,
+pre- or post-condition), return the whole updated use case with the same id; otherwise return null.
+
+Output ONLY JSON: { "answer": "...", "useCase": { ...same fields as above... } | null }`;
+
+    const { provider, model, systemPrompt } = await this.agentLLM.providerFor(BA_PROFILE, context.projectId);
+    const result = await provider.chat({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt }
+      ],
+      model,
+      maxTokens: 1200,
+      responseFormat: { type: 'json_object' }
+    });
+
+    let answer = (result.content || '').trim();
+    let updated: UseCaseData['useCases'][number] | undefined;
+    try {
+      const json = this.extractJSON(result.content || '');
+      answer = String(json.answer || answer).trim();
+      if (useCase && json.useCase) {
+        const parsed = UseCaseItemSchema.safeParse({ ...json.useCase, id: useCase.id });
+        if (parsed.success) updated = parsed.data;
+        else this.logger.warn(`Ignoring invalid use case update for ${useCase.id}: ${parsed.error.message}`);
+      }
+    } catch {
+      // Plain-text answer: keep it, leave the use case unchanged
+    }
+
+    let filesWritten: string[] = [];
+    if (updated && projectId) {
+      // Merge into the existing metadata: the Architect's design lives in the same JSON
+      const nextMetadata = {
+        ...metadata,
+        useCases: useCases.map(uc => (uc.id === updated!.id ? updated : uc)),
+      };
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: { ooadMetadata: JSON.parse(JSON.stringify(nextMetadata)) },
+      });
+      const artifacts = await this.ooadArtifacts.renderUseCaseArtifacts(
+        { actors: metadata.actors || [], useCases: nextMetadata.useCases },
+        context.projectName || context.projectContext?.name
+      );
+      filesWritten = await this.ooadArtifacts.writeFiles(projectId, artifacts);
+      this.logger.log(`BA updated ${updated.id} after a clarification request`);
+    }
+
+    return {
+      success: true,
+      output: {
+        action: 'clarifyUseCase',
+        output: answer,
+        clarification: `${useCaseId ? `${useCaseId}: ` : ''}${answer}`,
+        ...(updated ? { updatedUseCaseId: updated.id } : {}),
+      },
+    };
+  }
+
+  private async generateUseCases(context: AgentContext, thought: AgentThought): Promise<AgentActionResult<BaOutput>> {
+    const memories = thought.memories || [];
+    const memoryContext = memories.length > 0
+      ? `\n\nRelevant requirements patterns:\n${memories.join('\n')}`
+      : '';
+
+    const goal = context.goal || context.projectContext?.goal || '';
+    const description = context.projectContext?.description || '';
+
+    const prompt = `You are a Business Analyst. Generate structured use cases in JSON format.
+
+PROJECT GOAL: ${goal}
+PROJECT DESCRIPTION: ${description}
+${memoryContext}
+
+Generate a JSON object with this EXACT structure:
+{
+  "actors": ["Actor1", "Actor2", ...],
+  "useCases": [
+    {
+      "id": "UC-001",
+      "name": "Use case name",
+      "actor": "Actor name",
+      "priority": "High" | "Medium" | "Low",
+      "preConditions": ["condition 1", "condition 2"],
+      "postConditions": ["condition 1", "condition 2"],
+      "mainFlow": ["step 1", "step 2", "step 3", "step 4", "step 5", ...],
+      "alternativeFlows": ["alt flow 1", "alt flow 2"],
+      "exceptionFlows": ["exception 1", "exception 2"]
+    }
+  ]
+}
+
+Requirements:
+- Minimum 5 use cases
+- Each use case must have at least 5 steps in mainFlow
+- IDs must follow format UC-001, UC-002, etc.
+- Priority must be one of: High, Medium, Low
+
+Output ONLY valid JSON, no additional text.`;
+
+    const { provider, model, systemPrompt } = await this.agentLLM.providerFor(BA_PROFILE, context.projectId);
+
+    const result = await provider.chat({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt }
+      ],
+      model,
+      maxTokens: 3000,
+      responseFormat: { type: 'json_object' }
+    });
+
+    // Parse and validate JSON
+    let useCaseData: UseCaseData;
+    try {
+      const jsonContent = this.extractJSON(result.content || '');
+      useCaseData = UseCaseDataSchema.parse(jsonContent);
+    } catch (error: any) {
+      this.logger.error(`OOAD Schema validation failed: ${error.message}`);
+      throw new OOADSchemaValidationError('UseCaseData', error.errors || [error.message]);
+    }
+
+    // Render use-cases.md and use-case-diagram.puml from the OOAD templates
+    const projectId = context.projectId || 'unknown';
+    const artifacts = await this.ooadArtifacts.renderUseCaseArtifacts(useCaseData, context.projectContext?.name);
+    const useCasesMd = artifacts[0].content;
+
+    let filesWritten: string[];
+    try {
+      filesWritten = await this.ooadArtifacts.writeFiles(projectId, artifacts);
+      this.logger.log(`BA wrote OOAD artifacts for project ${projectId}`);
+    } catch (err: any) {
+      this.logger.error(`Failed to write OOAD artifacts: ${err.message}`);
+      throw new Error(`BA Agent failed to write artifacts: ${err.message}`);
+    }
+
+    // Persist to database (serialize to ensure Prisma Json compatibility)
+    if (projectId !== 'unknown') {
+      const metadataToSave = JSON.parse(JSON.stringify({
+        actors: useCaseData.actors,
+        useCases: useCaseData.useCases
+      }));
+      
+      await this.prisma.project.update({
+        where: { id: projectId },
+        data: {
+          ooadMetadata: metadataToSave
+        }
+      });
+      this.logger.log(`Saved OOAD metadata to project ${projectId}`);
+    }
+
+    // Save memory
+    const agentId = await this.memoryService.getAgentIdByRole(BA_PROFILE.role);
+    if (agentId) {
+      await this.memoryService.saveMemory(
+        agentId,
+        BA_PROFILE.role,
+        BA_PROFILE.primaryNamespace,
+        `Generated ${useCaseData.useCases.length} use cases for: ${goal}`,
+        { importance: 7, projectId }
+      );
+    }
+
+    // Emit action event
+    this.websocketGateway.sendToProject(projectId, {
+      type: 'agent:action',
+      payload: {
+        agentId: BA_PROFILE.role,
+        agentRole: BA_PROFILE.role,
+        taskId: context.taskId || 'none',
+        actionType: 'generateUseCases',
+        toolName: 'llm+template',
+        parameters: { goal, useCaseCount: useCaseData.useCases.length }
+      }
+    });
+
+    return {
+      success: true,
+      output: {
+        action: 'generateUseCases',
+        output: useCasesMd,
+        useCases: useCaseData.useCases,
+        actors: useCaseData.actors,
+        filesWritten
+      },
+    };
+  }
+
+  private extractJSON(content: string): any {
+    // Try to parse as-is first
+    try {
+      return JSON.parse(content);
+    } catch {
+      // Try to extract JSON from markdown code block
+      const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[1]);
+      }
+      // Try to find JSON object
+      const objMatch = content.match(/\{[\s\S]*\}/);
+      if (objMatch) {
+        return JSON.parse(objMatch[0]);
+      }
+      throw new Error('No valid JSON found in LLM response');
+    }
+  }
+}

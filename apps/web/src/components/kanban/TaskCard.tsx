@@ -1,22 +1,15 @@
 import React from 'react';
-import { Card, Tag, Typography, Space, Tooltip } from 'antd';
+import { Card, Flex, Tag, Tooltip, Typography, theme } from 'antd';
 import { RobotOutlined, DollarOutlined, ArrowUpOutlined, ArrowDownOutlined, MinusOutlined } from '@ant-design/icons';
 import { Task, TaskPriority } from '@ai-corp/shared-types';
+import { roleColor as roleTagColor } from '../../theme/palette';
 
 const { Text } = Typography;
 
 const PRIORITY_CONFIG: Record<TaskPriority, { color: string; icon: React.ReactNode; label: string }> = {
-  [TaskPriority.HIGH]: { color: '#ff4d4f', icon: <ArrowUpOutlined />, label: 'High' },
-  [TaskPriority.MEDIUM]: { color: '#faad14', icon: <MinusOutlined />, label: 'Medium' },
-  [TaskPriority.LOW]: { color: '#52c41a', icon: <ArrowDownOutlined />, label: 'Low' },
-};
-
-const ROLE_COLORS: Record<string, string> = {
-  CEO: '#722ed1',
-  PM: '#1677ff',
-  DEV: '#52c41a',
-  QA: '#fa8c16',
-  MARKETING: '#eb2f96',
+  [TaskPriority.HIGH]: { color: 'red', icon: <ArrowUpOutlined />, label: 'High' },
+  [TaskPriority.MEDIUM]: { color: 'gold', icon: <MinusOutlined />, label: 'Medium' },
+  [TaskPriority.LOW]: { color: 'green', icon: <ArrowDownOutlined />, label: 'Low' },
 };
 
 interface TaskCardProps {
@@ -27,7 +20,8 @@ interface TaskCardProps {
 
 export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onClick }) => {
   const priority = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG[TaskPriority.MEDIUM];
-  const roleColor = task.assignedAgent ? ROLE_COLORS[task.assignedAgent] ?? '#8b949e' : undefined;
+  const roleColor = task.assignedAgent ? roleTagColor(task.assignedAgent) : undefined;
+  const { token } = theme.useToken();
   const actualCost = Number(task.actualCost ?? 0);
   const estimatedCost = task.estimatedCost != null ? Number(task.estimatedCost) : null;
   const costExceeded = estimatedCost != null && actualCost > estimatedCost;
@@ -35,6 +29,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onClick }
   return (
     <Card
       size="small"
+      hoverable
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData('text/plain', task.id);
@@ -42,64 +37,34 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onClick }
         onDragStart(task.id);
       }}
       onClick={() => onClick?.(task)}
-      style={{
-        background: '#0d1117',
-        border: '1px solid #30363d',
-        borderRadius: 8,
-        cursor: 'grab',
-        transition: 'all 0.15s ease',
-        marginBottom: 8,
-      }}
-      styles={{ body: { padding: '10px 12px' } }}
+      style={{ cursor: 'grab' }}
+      styles={{ body: { padding: `${token.paddingXS}px ${token.paddingSM}px` } }}
     >
-      <Space direction="vertical" size={6} style={{ width: '100%' }}>
-        {/* Title + Priority */}
-        <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start">
-          <Text
-            style={{ color: '#e6edf3', fontSize: 13, fontWeight: 500, lineHeight: 1.4, flex: 1 }}
-          >
+      <Flex vertical gap={6}>
+        <Flex justify="space-between" align="start" gap={token.marginXS}>
+          <Text strong style={{ fontSize: token.fontSize, lineHeight: 1.4, flex: 1 }}>
             {task.title}
           </Text>
-          <Tooltip title={priority.label}>
-            <Tag
-              color={priority.color}
-              icon={priority.icon}
-              style={{ margin: 0, fontSize: 10, lineHeight: '14px', padding: '0 4px' }}
-            />
+          <Tooltip title={`${priority.label} priority`}>
+            <Tag color={priority.color} icon={priority.icon} style={{ margin: 0, paddingInline: 4 }} />
           </Tooltip>
-        </Space>
+        </Flex>
 
-        {/* Description */}
         {task.description && (
-          <div
-            style={{
-              color: '#8b949e',
-              fontSize: 12,
-              display: '-webkit-box',
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-              lineHeight: '16px',
-            }}
-          >
+          <Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }} style={{ fontSize: token.fontSizeSM, margin: 0 }}>
             {task.description}
-          </div>
+          </Typography.Paragraph>
         )}
 
-        {/* Footer: Agent + Cost */}
-        <Space style={{ width: '100%', justifyContent: 'space-between' }} size={4}>
+        <Flex justify="space-between" align="center" gap={4}>
           {task.assignedAgent ? (
             <Tooltip title={`Assigned to ${task.assignedAgent}`}>
-              <Tag
-                icon={<RobotOutlined />}
-                color={roleColor}
-                style={{ margin: 0, fontSize: 11 }}
-              >
+              <Tag icon={<RobotOutlined />} color={roleColor} style={{ margin: 0 }}>
                 {task.assignedAgent}
               </Tag>
             </Tooltip>
           ) : (
-            <Text style={{ color: '#484f58', fontSize: 11 }}>Unassigned</Text>
+            <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>Unassigned</Text>
           )}
 
           {(estimatedCost != null || actualCost > 0) && (
@@ -110,39 +75,18 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDragStart, onClick }
                   : `Actual: $${actualCost.toFixed(2)}`
               }
             >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 3,
-                  background: costExceeded ? '#ff4d4f18' : '#21262d',
-                  border: `1px solid ${costExceeded ? '#ff4d4f44' : '#30363d'}`,
-                  borderRadius: 4,
-                  padding: '1px 5px',
-                }}
-              >
-                <DollarOutlined
-                  style={{ color: costExceeded ? '#ff4d4f' : '#8b949e', fontSize: 10 }}
-                />
+              <Tag color={costExceeded ? 'error' : 'success'} icon={<DollarOutlined />} style={{ margin: 0 }}>
                 {estimatedCost != null && (
-                  <Text style={{ color: '#8b949e', fontSize: 10, textDecoration: 'line-through' }}>
+                  <Text type="secondary" delete style={{ fontSize: 10, marginInlineEnd: 4 }}>
                     {estimatedCost.toFixed(2)}
                   </Text>
                 )}
-                <Text
-                  style={{
-                    color: costExceeded ? '#ff4d4f' : '#52c41a',
-                    fontSize: 11,
-                    fontWeight: 600,
-                  }}
-                >
-                  {actualCost.toFixed(2)}
-                </Text>
-              </div>
+                <Text strong style={{ fontSize: token.fontSizeSM, color: 'inherit' }}>{actualCost.toFixed(2)}</Text>
+              </Tag>
             </Tooltip>
           )}
-        </Space>
-      </Space>
+        </Flex>
+      </Flex>
     </Card>
   );
 };

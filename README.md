@@ -50,43 +50,54 @@ Nền tảng mô phỏng công ty công nghệ ảo với hệ thống AI Agents
 ## Quick Start
 
 ```bash
-# Prerequisites: Node.js 18+, pnpm 8+, Docker, PostgreSQL
+# Prerequisites: Git, Node.js 20+ (22 LTS recommended), pnpm 8 (npm install -g pnpm@8), Docker
+# Windows: clone with `git clone -c core.autocrlf=input ...`
+
+# PostgreSQL (pgvector) + Redis
+docker compose up -d postgres redis
 
 # Install
 pnpm install
 
 # Setup environment
 cp apps/api/.env.example apps/api/.env
-# Edit apps/api/.env with your configuration
+cp apps/web/.env.example apps/web/.env
+# Edit apps/api/.env: NINE_ROUTER_URL / NINE_ROUTER_API_KEY
+# (offline: NINE_ROUTER_URL=http://127.0.0.1:20128/v1 with the scripted LLM below)
 
 # Initialize database
 cd apps/api
-pnpm db:push
+npx prisma migrate deploy
 pnpm db:seed    # Creates admin@aicorp.com / admin123
+cd ../..
 
-# Start Redis (required for BullMQ)
-docker run -d --name ai-corp-redis -p 6379:6379 redis:7-alpine
+# Optional: scripted OpenAI-compatible LLM for offline runs (port 20128)
+node scripts/demo/demo-llm.cjs
 
-# Start dev servers
-pnpm dev                    # Terminal 1: Backend :3000
-cd ../web && pnpm dev       # Terminal 2: Frontend :5173
+# Start dev servers (builds shared-types, then API :3000 + web :5173)
+pnpm dev
 ```
 
-Open: **http://localhost:5173**
+Open: **http://localhost:5173**. Production with Docker: see `docker-compose.prod.yml` and `docs/demo/DEMO_SCRIPT.md`.
 
 ## Key Features
 
 ### Multi-Agent Orchestration
-Five specialized AI agents collaborate through a DAG-based workflow engine:
-- **CEO** - Strategic planning, milestone creation
-- **PM** - Task breakdown, prioritization
-- **DEV** - Code implementation, testing
-- **QA** - Code review, bug detection
+Eight specialized AI agents collaborate through a DAG-based workflow engine, applying OOAD to every project they build:
+- **CEO** - Strategic planning, milestone creation, project close-out
+- **BA** - Use cases and use case diagram
+- **ARCHITECT** - Domain model, class/sequence diagrams, design patterns, layered code skeleton
+- **PM** - One task per approved use case
+- **DEV** - Implementation following the approved design
+- **QC** - Acceptance tests per use case, traceability matrix, coverage
+- **QA** - OOAD quality gate and design-conformance review
 - **MARKETING** - Announcement drafting
+
+Generated project files (docs, skeleton, code, tests) are stored in the project workspace: `PROJECTS_WORKSPACE_DIR/projects/<projectId>/` (default `apps/api/workspace/`).
 
 ### Workflow Engine
 - DAG-based execution with cycle detection
-- Node types: `agent_task`, `human_approval`, `condition`, `parallel`
+- Node types: `agent_task`, `human_approval`, `condition`, `parallel`, `quality_gate`
 - Retry with exponential backoff (configurable per node)
 - Real-time state transitions via WebSocket
 - BullMQ job queue for scalable execution
@@ -131,7 +142,7 @@ ai-corp/
 │   │       ├── main.ts                   # Application entry
 │   │       ├── app.module.ts             # Root module
 │   │       └── modules/
-│   │           ├── agents/               # AI Agents (CEO, PM, DEV, QA, Marketing)
+│   │           ├── agents/               # AI Agents (CEO, BA, Architect, PM, DEV, QC, QA, Marketing)
 │   │           ├── approvals/            # Human-in-the-loop approval system
 │   │           ├── auth/                 # JWT authentication & guards
 │   │           ├── cost/                 # Cost analytics API
@@ -188,9 +199,9 @@ ai-corp/
 ## Default Workflow
 
 ```
-start (CEO) → breakdown (PM) → develop (DEV) → review (QA)
-    ↓ (loop on fail)
-qa_condition → market (Marketing) → approval (Human) → end (CEO)
+start (CEO) → analyze (BA) → design (Architect) → ooad_gate (quality gate, loops to design on fail)
+    → breakdown (PM) → develop (DEV) → test (QC) → review (QA)
+    → qa_condition (loops to develop on fail) → market (Marketing) → approval (Human) → end (CEO)
 ```
 
 ## Development

@@ -1,0 +1,45 @@
+@startuml AD-003-task-estimation-ml-pipeline
+!theme plain
+title Effort & cost estimation (UC-024) - Activity Diagram
+' Rewritten 2026-10-26 (Phase 6, Task 25) to match the implementation: a per-role regression
+' learnt from finished projects instead of an embedding search + gradient boosting pipeline.
+
+|System|
+start
+:workflow.started (EstimationHandler);
+:TrainingDataCollector:\none sample per finished project and role\n(features: description length, use case count;\n targets: agent time, LLM cost);
+if (Model cached for this history?) then (yes)
+else (no)
+  :EstimationModel.train();
+  while (for each agent role)
+    if (samples >= 6?) then (yes)
+      :RegressionEstimator\n(ridge least squares, floor = smallest value seen);
+    else (no)
+      :MedianEstimator;
+    endif
+    :Leave-one-out error (MAPE / MAE);
+  endwhile
+endif
+if (Any finished project?) then (yes)
+  :Forecast per role, sum for the project,\nconfidence low / medium / high;
+  :Store ProjectEstimate (stage = start);
+else (no)
+  :No forecast (tasks keep estimatedCost = null);
+  stop
+endif
+
+|PM Agent|
+:Break the plan into tasks;
+
+|System|
+:Store ProjectEstimate (stage = planned);
+:estimateTaskCost = (DEV + QC + QA cost) / task count;
+:Create tasks with estimatedCost (AgentTaskStrategy);
+
+|Board Member|
+:Open Reports > Effort & cost forecast\n(GET /projects/:id/estimate);
+if (Project finished?) then (yes)
+  :See the start forecast against the outcome\n(compareForecast);
+endif
+stop
+@enduml

@@ -1,0 +1,88 @@
+@startuml deployment-diagram
+title AI-CORP Deployment Diagram (docker-compose.prod.yml)
+' Rewritten in Phase 7 (Task 32) to match the stack that is actually built and verified:
+' one Docker host, only nginx published, the API runs the workflow engine and its BullMQ
+' worker in the same process, generated projects persist in a volume.
+
+skinparam defaultFontSize 11
+skinparam backgroundColor #FEFEFE
+skinparam node {
+  BackgroundColor #D5F5E3
+  BorderColor #27AE60
+}
+skinparam artifact {
+  BackgroundColor #D6EAF8
+  BorderColor #2980B9
+}
+skinparam database {
+  BackgroundColor #FCF3CF
+  BorderColor #D4AC0D
+}
+skinparam cloud {
+  BackgroundColor #EBDEF0
+  BorderColor #8E44AD
+}
+skinparam note {
+  BackgroundColor #FFFDE7
+  BorderColor #F9A825
+}
+
+node "Client device" <<device>> {
+  artifact "Browser\n(React SPA)" as BROWSER
+}
+
+node "Docker host" <<execution environment>> {
+  node "web" <<container: nginx 1.27>> {
+    artifact "Static SPA\n(vite build)" as SPA
+    artifact "Reverse proxy\n/api, /socket.io, /plantuml" as PROXY
+  }
+
+  node "api" <<container: Node 20>> {
+    artifact "NestJS API\n(REST + Socket.IO)" as API
+    artifact "WorkflowEngine\n+ BullMQ worker" as ENGINE
+    artifact "8 AI agents\n(Strategy-based)" as AGENTS
+    artifact "QC test runner\n(local temp copy)" as RUNNER
+    artifact "docker-entrypoint.sh\nprisma migrate deploy" as ENTRY
+  }
+
+  node "plantuml" <<container: plantuml-server>> {
+    artifact "PlantUML renderer" as PUML
+  }
+
+  node "postgres" <<container: pgvector/pg16>> {
+    database "ai_corp" as DB
+  }
+
+  node "redis" <<container: redis 7>> {
+    database "BullMQ queue\n(AOF)" as QUEUE
+  }
+
+  node "demo-llm" <<container: Node 20, profile demo>> {
+    artifact "Scripted OpenAI-\ncompatible LLM" as MOCK
+  }
+
+  database "workspace_data\n(volume)" as WS
+  database "postgres_data\n(volume)" as PGV
+}
+
+cloud "9Router LLM gateway\n(OpenAI-compatible)" as ROUTER
+
+BROWSER --> PROXY : HTTP(S) :WEB_PORT
+PROXY --> SPA
+PROXY --> API : HTTP :3000 (/api, /socket.io)
+PROXY --> PUML : HTTP :8080 (/plantuml)
+API --> DB : TCP :5432 (Prisma)
+ENGINE --> QUEUE : TCP :6379
+AGENTS --> ROUTER : HTTPS (NINE_ROUTER_URL)
+AGENTS ..> MOCK : HTTP :20128 (offline demo)
+AGENTS --> WS : generated docs, code, tests
+RUNNER --> WS : copies, runs jest
+DB --> PGV
+
+note bottom of API
+  Health: GET /api/health (503 when the database is down),
+  GET /api/health/live (Docker HEALTHCHECK).
+  NODE_ENV=production refuses to start without JWT_SECRET (>= 32 chars),
+  CORS_ORIGIN, or with placeholder secrets.
+end note
+@enduml

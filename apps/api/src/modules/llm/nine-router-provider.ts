@@ -26,7 +26,8 @@ export class NineRouterProvider implements ILLMProvider {
   private readonly MAX_RETRIES = 3;
   private readonly RETRY_BASE_DELAY_MS = 1000;
 
-  constructor(baseURL: string, apiKey: string) {
+  /** @param providerName - reported as actualProvider when the gateway does not name one */
+  constructor(baseURL: string, apiKey: string, private readonly providerName = 'ninerouter') {
     if (!baseURL) {
       throw new Error('NINE_ROUTER_URL environment variable is not set');
     }
@@ -78,6 +79,7 @@ export class NineRouterProvider implements ILLMProvider {
           temperature: params.temperature ?? 0.7,
           max_tokens: params.maxTokens,
           tools: params.tools as any, // OpenAI tools format
+          ...(params.responseFormat && { response_format: params.responseFormat }),
         });
 
         this.logger.debug(
@@ -107,7 +109,7 @@ export class NineRouterProvider implements ILLMProvider {
 
       // Extract actual provider from response
       // 9Router may return this in headers or in the response
-      let actualProvider = 'ninerouter';
+      let actualProvider = this.providerName;
       if ((response as any).headers) {
         const providerHeader = (response as any).headers['x-provider'];
         if (providerHeader) {
@@ -232,9 +234,9 @@ export class NineRouterProvider implements ILLMProvider {
 
   /**
    * Get the provider name
-   * @returns 'ninerouter'
+   * @returns 'ninerouter', or the name given for a provider configured in the app
    */
   getProviderName(): string {
-    return 'ninerouter';
+    return this.providerName;
   }
 }

@@ -3,6 +3,7 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { jwtSecret } from '../security/runtime-config';
 
 export interface JwtPayload {
   sub: string;
@@ -19,7 +20,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET', 'super-secret-fallback-key'),
+      secretOrKey: jwtSecret({ JWT_SECRET: configService.get<string>('JWT_SECRET') }),
     });
   }
 
@@ -30,6 +31,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (!user) {
       throw new UnauthorizedException('User no longer exists.');
+    }
+    // Role and access changes take effect on the next request, not when the token expires
+    if (!user.isActive) {
+      throw new UnauthorizedException('This account has been deactivated.');
     }
 
     return {

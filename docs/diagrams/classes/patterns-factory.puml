@@ -1,0 +1,289 @@
+@startuml Factory Pattern - AI-CORP
+!theme plain
+title Design Patterns - Factory Method & Abstract Factory
+scale 1.0
+
+' ========================================
+' FACTORY METHOD PATTERN
+' ========================================
+
+package "Agent Registry (DI factory provider)" <<Factory Method>> {
+  
+  note as N1
+    **Factory provider + Registry (Task 11)**
+    
+    **Intent**: let the DI container create every agent and hand
+    the whole roster to clients as one abstraction (IAgent[]).
+    
+    **Structure**:
+    - Creator: agentsProvider() → { provide: AGENTS, useFactory, inject: AGENT_CLASSES }
+    - Product: IAgent
+    - ConcreteProduct: CeoAgent, BaAgent, ..., MarketingAgent
+    - Configuration: one RoleProfile per role (profiles/*.ts)
+    
+    **Before**: AgentOrchestratorService(ceo: CeoAgent, pm: PmAgent, ... 8 params)
+    **After**:  AgentOrchestratorService(@Inject(AGENTS) agents: IAgent[])
+  end note
+  
+  class "agentsProvider(classes = AGENT_CLASSES)" as AgentFactory <<Factory Method>> {
+    + provide: AGENTS
+    + inject: Type<IAgent>[]
+    + useFactory(...agents: IAgent[]): IAgent[]
+  }
+
+  class AGENT_CLASSES <<const>> {
+    CeoAgent, BaAgent, ArchitectAgent, PmAgent,
+    DevAgent, QcAgent, QaAgent, MarketingAgent
+  }
+  
+  interface IAgent <<Product>> {
+    + getId(): string
+    + getRole(): AgentRole
+    + getState(): AgentState
+    + execute(context: AgentContext): Promise<AgentResult>
+  }
+  
+  abstract class BaseAgent <<ConcreteProduct>> {
+    # profile: RoleProfile
+    + execute(context: AgentContext): Promise<AgentResult>
+  }
+
+  class RoleProfile <<value-object>> {
+    role, displayName, systemPrompt,
+    defaultModel, memoryNamespaces, taskTypes
+  }
+  
+  class CeoAgent <<ConcreteProduct>>
+  class DevAgent <<ConcreteProduct>>
+  class QcAgent <<ConcreteProduct>>
+  
+  ' Relationships
+  AgentFactory --> AGENT_CLASSES : inject
+  AgentFactory ..> IAgent : provides IAgent[]
+  IAgent <|.. BaseAgent : implements
+  BaseAgent <|-- CeoAgent : extends
+  BaseAgent <|-- DevAgent : extends
+  BaseAgent <|-- QcAgent : extends
+  BaseAgent --> RoleProfile
+}
+
+' ========================================
+' ABSTRACT FACTORY PATTERN
+' ========================================
+
+package "Abstract Factory Pattern" <<Abstract Factory>> {
+  
+  note as N2
+    **Abstract Factory Pattern**
+    
+    **Intent**: Provide an interface for creating families
+    of related or dependent objects without specifying
+    their concrete classes.
+    
+    **Benefits**:
+    - Isolates concrete classes
+    - Makes exchanging product families easy
+    - Promotes consistency among products
+    
+    **Structure**:
+    - AbstractFactory: ILLMProviderFactory
+    - ConcreteFactory: NineRouterFactory, AnthropicFactory
+    - AbstractProduct: ILLMProvider
+    - ConcreteProduct: NineRouterProvider, AnthropicProvider
+  end note
+  
+  interface ILLMProviderFactory <<AbstractFactory>> {
+    + createProvider(config: ModelRouteConfig): ILLMProvider
+    + supportsModel(model: string): boolean
+    + getFallbackProvider(): ILLMProvider
+  }
+  
+  class LLMProviderFactory <<ConcreteFactory>> {
+    - providers: Map<string, ILLMProvider>
+    - fallbackProviders: Map<string, ILLMProvider>
+    --
+    + createProvider(config: ModelRouteConfig): ILLMProvider
+    + supportsModel(model: string): boolean
+    + getFallbackProvider(): ILLMProvider
+    + getProvider(config: ModelRouteConfig): ILLMProvider
+    --
+    **Registration**
+    + registerProvider(name: string, provider: ILLMProvider): void
+    + registerFallback(name: string, provider: ILLMProvider): void
+    --
+    **Circuit Breaker Integration**
+    - checkCircuitBreaker(providerName: string): boolean
+    - triggerFallback(config: ModelRouteConfig): ILLMProvider
+  }
+  
+  interface ILLMProvider <<AbstractProduct>> {
+    + chat(params: ChatParams): Promise<ChatResult>
+    + getProviderName(): string
+    + supportsModel(model: string): boolean
+    + healthCheck(): Promise<boolean>
+  }
+  
+  class NineRouterProvider <<ConcreteProduct>> {
+    - apiKey: string
+    - baseUrl: string
+    - circuitBreaker: CircuitBreaker
+    --
+    + chat(params: ChatParams): Promise<ChatResult>
+    + getProviderName(): string
+    + supportsModel(model: string): boolean
+    + healthCheck(): Promise<boolean>
+    --
+    **9Router Specific**
+    - handleRTKCompression(params: ChatParams): ChatParams
+    - calculateTokenSaved(original: number, compressed: number): number
+  }
+  
+  class AnthropicProvider <<ConcreteProduct>> {
+    - apiKey: string
+    - baseUrl: string
+    --
+    + chat(params: ChatParams): Promise<ChatResult>
+    + getProviderName(): string
+    + supportsModel(model: string): boolean
+    + healthCheck(): Promise<boolean>
+    --
+    **Anthropic Specific**
+    - formatMessages(messages: Message[]): object
+    - parseResponse(response: object): ChatResult
+  }
+  
+  class OpenAIProvider <<ConcreteProduct>> {
+    - apiKey: string
+    - baseUrl: string
+    --
+    + chat(params: ChatParams): Promise<ChatResult>
+    + getProviderName(): string
+    + supportsModel(model: string): boolean
+    + healthCheck(): Promise<boolean>
+    --
+    **OpenAI Specific**
+    - handleFunctionCalling(params: ChatParams): ChatParams
+    - parseToolCalls(response: object): ToolCall[]
+  }
+  
+  ' Relationships
+  ILLMProviderFactory <|.. LLMProviderFactory : implements
+  LLMProviderFactory ..> ILLMProvider : creates
+  ILLMProvider <|.. NineRouterProvider : implements
+  ILLMProvider <|.. AnthropicProvider : implements
+  ILLMProvider <|.. OpenAIProvider : implements
+}
+
+' ========================================
+' FACTORY USAGE EXAMPLE
+' ========================================
+
+package "Client Code" <<client>> {
+  
+  class AgentOrchestratorService {
+    - agentRegistry: Map<string, IAgent>
+    --
+    + constructor(@Inject(AGENTS) agents: IAgent[], messages: AgentMessageService)
+    + invokeAgent(role: string, context: AgentContext): Promise<AgentResult>
+    + getAvailableRoles(): string[]
+  }
+
+  class AgentLLMService {
+    + providerFor(profile: RoleProfile, projectId?): {provider, model, systemPrompt}
+  }
+  
+  ' Usage relationships
+  AgentOrchestratorService --> IAgent : looks up by role
+  AgentLLMService --> LLMProviderFactory : uses
+  AgentLLMService --> ILLMProvider : wraps in UsageTrackingLLMProvider
+}
+
+note bottom of AgentOrchestratorService
+  **Client Code Example**:
+  
+  ```typescript
+  // Registry usage (agents created by Nest DI via agentsProvider())
+  const result = await orchestrator.invokeAgent('DEV', context);
+  // Adding a role: new profile + 2 strategies + 1 entry in AGENT_CLASSES
+  
+  // Abstract Factory usage
+  const llmFactory = new LLMProviderFactory();
+  const provider: ILLMProvider = llmFactory.getProvider({
+    provider: 'ninerouter',
+    model: 'claude-3-sonnet'
+  });
+  const chatResult = await provider.chat(chatParams);
+  
+  // Fallback handling
+  if (provider.healthCheck() === false) {
+    const fallback = llmFactory.getFallbackProvider();
+    const chatResult = await fallback.chat(chatParams);
+  }
+  ```
+  
+  **Benefits in AI-CORP**:
+  - Easy to add new agent types
+  - Easy to swap LLM providers
+  - Centralized configuration
+  - Fallback provider management
+  - Circuit breaker integration
+end note
+
+' ========================================
+' PARALLEL CLASS HIERARCHIES
+' ========================================
+
+note right of AGENT_CLASSES
+  **Open/Closed**:
+  the only list of concrete agent classes.
+  The orchestrator and workflow engine
+  depend on IAgent, so a 9th role does not
+  touch them (covered by agent-registry.spec.ts).
+end note
+
+note right of LLMProviderFactory
+  **Family of Related Products**:
+  
+  LLM Provider Family:
+  - NineRouterProvider (primary with RTK)
+  - AnthropicProvider (fallback)
+  - OpenAIProvider (fallback)
+  
+  All providers:
+  - Implement ILLMProvider interface
+  - Support chat() method
+  - Return ChatResult
+  - Can be swapped at runtime
+  
+  Factory ensures:
+  - Consistent interface
+  - Proper configuration
+  - Fallback handling
+  - Circuit breaker integration
+end note
+
+' ========================================
+' BENEFITS SUMMARY
+' ========================================
+
+note top of AgentFactory
+  **Registry / factory provider benefits in AI-CORP**:
+  
+  1. **Decoupling**: the orchestrator does not know concrete agent classes
+  2. **Extensibility**: add a role without modifying the orchestrator
+  3. **Configuration**: per-role defaults in one RoleProfile (also used by the seed)
+  4. **Testing**: the token can be built with fake agents (TestAgent)
+  5. **Consistency**: all agents get their dependencies from the container
+end note
+
+note top of ILLMProviderFactory
+  **Abstract Factory Benefits in AI-CORP**:
+  
+  1. **Provider Independence**: Switch providers without code changes
+  2. **Fallback Management**: Automatic fallback on provider failure
+  3. **Circuit Breaker**: Integrated health checking and failover
+  4. **Consistency**: All providers implement same interface
+  5. **Cost Optimization**: Route to cheapest provider with same capabilities
+end note
+
+@enduml

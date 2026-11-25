@@ -1,170 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { BaseAgent } from './base.agent';
-import { AgentRole, ModelRouteConfig } from '@ai-corp/shared-types';
-import { MemoryService } from '../memory/memory.service';
-import { LLMProviderFactory } from '../llm/llm-provider.factory';
-import { ToolRegistry } from '../tools/tool.registry';
-import { SandboxExecutor } from '../tools/sandbox.executor';
-import { ApiUsageService } from '../llm/api-usage.service';
 import { AppWebSocketGateway } from '../websocket/websocket.gateway';
+import { EventBus } from '../../domain/events/EventBus';
+import { DevAgentOutput } from '../../domain/agent/AgentOutputs';
+import { DevThinkingStrategy, DevActionStrategy } from './strategies';
+import { DEV_PROFILE } from './profiles';
 
 @Injectable()
-export class DevAgent extends BaseAgent {
+export class DevAgent extends BaseAgent<DevAgentOutput> {
   constructor(
-    memoryService: MemoryService,
-    llmFactory: LLMProviderFactory,
-    toolRegistry: ToolRegistry,
-    sandboxExecutor: SandboxExecutor,
-    apiUsageService: ApiUsageService,
-    websocketGateway: AppWebSocketGateway
+    thinkingStrategy: DevThinkingStrategy,
+    actionStrategy: DevActionStrategy,
+    websocketGateway: AppWebSocketGateway,
+    eventBus: EventBus
   ) {
-    const systemPrompt = `You are the Lead Developer. Your job is to write REAL, WORKING code for the project.
-
-RULES:
-1. Always output complete, runnable code in <CODE> blocks
-2. Use the EXACT file path on the first line after <CODE filepath="...">
-3. Write production-quality code, not placeholders
-4. Match the technology stack requested in the project description
-5. Each <CODE> block must be self-contained and functional
-
-FORMAT:
-<CODE filepath="path/to/file.ext">
-complete working code here
-</CODE>`;
-    const modelConfig: ModelRouteConfig = { provider: 'opencode', model: 'openrouter/nvidia/nemotron-3-super-120b-a12b:free', fallbackProvider: 'opencode' };
-    super(AgentRole.DEV, systemPrompt, modelConfig, memoryService, llmFactory, toolRegistry, sandboxExecutor, apiUsageService, websocketGateway);
-  }
-
-  async think(context: any): Promise<any> {
-    this.logger.debug('Dev thinking...');
-    const goal = context.goal || context.projectContext?.goal || '';
-    this.emitThinking(context.projectId, `Analyzing implementation requirements for: ${goal || context.task}`);
-
-    const memories = await this.loadMemory('coding_conventions', JSON.stringify(context));
-    return { thought: `Analyzing implementation requirements for: ${goal || context.task}`, memories };
-  }
-
-  async act(context: any): Promise<any> {
-    this.logger.debug('Dev acting...');
-    const memories = context.memories || [];
-    const memoryContext = memories.length > 0
-      ? `\n\nRelevant coding conventions:\n${memories.map((m: any) => m.content).join('\n')}`
-      : '';
-
-    // Extract project context
-    const goal = context.goal || context.projectContext?.goal || '';
-    const description = context.projectSummary || context.projectContext?.description || '';
-    const projectName = context.projectName || context.projectContext?.name || '';
-    const existingCode = context.code || '';
-
-    const prompt = `You are implementing a software project. Write REAL, WORKING code.
-
-PROJECT: ${projectName || 'New Project'}
-GOAL: ${goal}
-DESCRIPTION: ${description}
-
-TASK: ${context.task}
-${memoryContext}
-
-${existingCode ? `EXISTING CODE:\n${existingCode}\n` : ''}
-
-INSTRUCTIONS:
-1. Analyze the PROJECT GOAL and DESCRIPTION carefully
-2. Choose the appropriate technology stack based on the description:
-   - If it mentions "Express", "Node.js", "server" → write Express.js server code
-   - If it mentions "React", "frontend", "web app" → write React component code
-   - If it mentions "TypeScript", "Ant Design" → use TypeScript + Ant Design
-   - If it mentions "HTML", "CSS" → write HTML/CSS/JS
-3. Write COMPLETE, RUNNABLE code - not pseudocode or placeholders
-4. Include all necessary imports, exports, and configuration
-5. Output code in this EXACT format for each file:
-
-<CODE filepath="src/index.js">
-// your complete working code here
-</CODE>
-
-Write ALL files needed for the project to work. Make it production-quality.`;
-
-    const result = await this.callLLM({
-      messages: [{ role: 'user', content: prompt }],
-      maxTokens: 3000
-    }, context.projectId);
-
-    const llmOutput = result.content || '';
-
-    // Parse <CODE filepath="..."> blocks from LLM output
-    const codeBlocks = this.parseCodeBlocks(llmOutput);
-
-    let writtenFiles: string[] = [];
-    let codeContent = '';
-
-    if (codeBlocks.length > 0) {
-      for (const block of codeBlocks) {
-        try {
-          const command = `mkdir -p $(dirname "${block.filepath}") && cat > "${block.filepath}" << 'HEREDOC_EOF'\n${block.content}\nHEREDOC_EOF`;
-          await this.executeSandboxCommand(command, {
-            maxMemoryMB: 256,
-            maxCPUPercent: 30,
-            maxDiskMB: 100,
-            timeout: 10000
-          });
-          writtenFiles.push(block.filepath);
-          codeContent += `// File: ${block.filepath}\n${block.content}\n\n`;
-          this.logger.log(`DEV wrote file: ${block.filepath}`);
-        } catch (err: any) {
-          this.logger.warn(`Failed to write file ${block.filepath}: ${err.message}`);
-          // Fallback: try simpler write
-          try {
-            const escaped = block.content.replace(/'/g, "'\\''");
-            await this.executeSandboxCommand(`echo '${escaped}' > "${block.filepath}"`);
-            writtenFiles.push(block.filepath);
-            codeContent += `// File: ${block.filepath}\n${block.content}\n\n`;
-          } catch (e2: any) {
-            this.logger.error(`Fallback write also failed for ${block.filepath}: ${e2.message}`);
-          }
-        }
-      }
-    }
-
-    // If no code blocks found, use raw LLM output as code content
-    if (!codeContent) {
-      codeContent = llmOutput;
-    }
-
-    // Verify written files exist
-    if (writtenFiles.length > 0) {
-      try {
-        const verifyCmd = writtenFiles.map(f => `test -f "${f}" && echo "OK:${f}" || echo "MISSING:${f}"`).join('; ');
-        const verifyResult = await this.executeSandboxCommand(verifyCmd);
-        this.logger.log(`File verification: ${verifyResult.output}`);
-      } catch (e) {
-        this.logger.warn(`File verification failed: ${(e as Error).message}`);
-      }
-    }
-
-    await this.saveMemory('coding_conventions', `Implemented task: ${context.task}. Files written: ${writtenFiles.join(', ') || 'none'}`, 5, context.projectId);
-
-    this.emitAction(context.projectId, context.taskId || 'none', 'implement', writtenFiles.length > 0 ? 'write_file' : 'llm', { task: context.task, files: writtenFiles });
-
-    return {
-      action: 'implement',
-      output: codeContent,
-      toolOutput: writtenFiles.length > 0 ? `Wrote ${writtenFiles.length} file(s): ${writtenFiles.join(', ')}` : 'No files written (code in response only)',
-      filesWritten: writtenFiles,
-      code: codeContent
-    };
-  }
-
-  /**
-   * Parse <CODE filepath="...">...</CODE> blocks from LLM output
-   */
-  private parseCodeBlocks(output: string): Array<{ filepath: string; content: string }> {
-    const blocks: Array<{ filepath: string; content: string }> = [];
-    const regex = /<CODE\s+filepath=["']([^"']+)["']>\s*\n([\s\S]*?)\n\s*<\/CODE>/gi;
-    let match;
-    while ((match = regex.exec(output)) !== null) {
-      blocks.push({ filepath: match[1], content: match[2] });
-    }
-    return blocks;
+    super(DEV_PROFILE, thinkingStrategy, actionStrategy, websocketGateway, eventBus);
   }
 }

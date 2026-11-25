@@ -3,6 +3,10 @@ import { WorkflowEngine } from './workflow.engine';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AppWebSocketGateway } from '../websocket/websocket.gateway';
 import { AgentOrchestratorService } from '../orchestrator/agent-orchestrator.service';
+import { EventBus } from '../../domain/events/EventBus';
+import { MILESTONE_REPOSITORY, TASK_REPOSITORY } from '../../domain/repositories';
+import { WORKFLOW_ENGINE_REPOSITORY } from './persistence/workflow-engine.repository';
+import { PrismaWorkflowEngineRepository } from './persistence/prisma-workflow-engine.repository';
 import { WorkflowDefinition, WorkflowNode, WorkflowContext, AgentRole } from '@ai-corp/shared-types';
 
 // Mock BullMQ to prevent Redis connections during tests
@@ -29,6 +33,7 @@ describe('WorkflowEngine - Node Execution Logic', () => {
   let prismaService: any;
   let websocketGateway: any;
   let orchestrator: any;
+  let taskRepository: any;
 
   // Mock workflow run data
   const mockWorkflowRun = {
@@ -75,6 +80,7 @@ describe('WorkflowEngine - Node Execution Logic', () => {
           startedAt: new Date(),
         }),
         update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       project: {
         findUnique: jest.fn().mockResolvedValue(mockProject),
@@ -88,12 +94,14 @@ describe('WorkflowEngine - Node Execution Logic', () => {
           status: 'pending',
           requestData: {},
         }),
+        count: jest.fn().mockResolvedValue(0),
       },
     };
 
     const mockWebSocketGateway = {
       sendToProject: jest.fn(),
       sendToUser: jest.fn(),
+      sendToProjectAndUser: jest.fn(),
     };
 
     const mockOrchestrator = {
@@ -104,8 +112,19 @@ describe('WorkflowEngine - Node Execution Logic', () => {
       providers: [
         WorkflowEngine,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: WORKFLOW_ENGINE_REPOSITORY, useClass: PrismaWorkflowEngineRepository },
         { provide: AppWebSocketGateway, useValue: mockWebSocketGateway },
         { provide: AgentOrchestratorService, useValue: mockOrchestrator },
+        { provide: EventBus, useValue: { publish: jest.fn().mockResolvedValue(undefined) } },
+        { provide: MILESTONE_REPOSITORY, useValue: { create: jest.fn() } },
+        {
+          provide: TASK_REPOSITORY,
+          useValue: {
+            create: jest.fn(),
+            findByStatus: jest.fn().mockResolvedValue([]),
+            update: jest.fn().mockResolvedValue({}),
+          },
+        },
       ],
     }).compile();
 
@@ -113,6 +132,7 @@ describe('WorkflowEngine - Node Execution Logic', () => {
     prismaService = module.get(PrismaService) as any;
     websocketGateway = module.get(AppWebSocketGateway) as any;
     orchestrator = module.get(AgentOrchestratorService) as any;
+    taskRepository = module.get(TASK_REPOSITORY) as any;
   });
 
   afterEach(() => {
@@ -210,6 +230,80 @@ describe('WorkflowEngine - Node Execution Logic', () => {
     });
   });
 
+  describe('executeNode - agent_task task status updates', () => {
+    const inProgressTask = {
+      id: 'task-1',
+      projectId: 'project-456',
+      milestoneId: null,
+      title: 'Build login',
+      description: 'Build login',
+      status: 'in_progress',
+      priority: 'medium',
+      assignedAgent: null,
+      estimatedCost: null,
+      actualCost: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const reviewTask = { ...inProgressTask, id: 'task-2', status: 'review' };
+
+    const runAgent = async (agentRole: AgentRole, tasksByStatus: Record<string, any[]>, agentResult: any = { success: true }) => {
+      const agentNode: WorkflowNode = { id: 'agent-node-1', type: 'agent_task', agentRole };
+      engine.createWorkflow({
+        id: 'def-789',
+        name: 'Test Workflow',
+        version: '1.0.0',
+        nodes: [agentNode],
+        edges: [],
+        startNode: 'agent-node-1',
+        endNode: 'agent-node-1',
+      });
+      orchestrator.invokeAgent.mockResolvedValue(agentResult);
+      taskRepository.findByStatus.mockImplementation(async (_projectId: string, status: string) => tasksByStatus[status] || []);
+      return (engine as any).executeNode(agentNode, mockWorkflowRun);
+    };
+
+    it('moves open tasks to review when the DEV agent finishes', async () => {
+      const todoTask = { ...inProgressTask, id: 'task-3', status: 'todo' };
+      await runAgent(AgentRole.DEV, { in_progress: [inProgressTask], todo: [todoTask] });
+
+      expect(taskRepository.findByStatus).toHaveBeenCalledWith('project-456', 'in_progress');
+      expect(taskRepository.update).toHaveBeenCalledWith('task-1', { status: 'review' });
+      expect(taskRepository.update).toHaveBeenCalledWith('task-3', { status: 'review' });
+      expect(websocketGateway.sendToProject).toHaveBeenCalledWith(
+        'project-456',
+        expect.objectContaining({ type: 'task:updated', data: expect.objectContaining({ status: 'review' }) })
+      );
+    });
+
+    it('moves review tasks to done when QA approves', async () => {
+      await runAgent(AgentRole.QA, { review: [reviewTask] }, {
+        action: { success: true, output: { action: 'review', qa_approved: true } },
+      });
+      expect(taskRepository.update).toHaveBeenCalledWith('task-2', { status: 'done' });
+    });
+
+    it('sends review tasks back to in_progress when QA rejects', async () => {
+      await runAgent(AgentRole.QA, { review: [reviewTask] }, {
+        action: { success: true, output: { action: 'review', qa_approved: false } },
+      });
+      expect(taskRepository.update).toHaveBeenCalledWith('task-2', { status: 'in_progress' });
+    });
+
+    it('does not let QA skip review: an in_progress task is left unchanged', async () => {
+      const result = await runAgent(AgentRole.QA, { in_progress: [inProgressTask] });
+
+      expect(result.status).toBe('success');
+      expect(taskRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('fails the node when the agent strategy reports failure', async () => {
+      await expect(runAgent(AgentRole.QC, {}, { action: { success: false, output: null, error: 'QC needs a project' } }))
+        .rejects.toThrow('QC needs a project');
+    });
+  });
+
   describe('executeNode - human_approval', () => {
     it('should create approval request and emit WebSocket event', async () => {
       const approvalNode: WorkflowNode = {
@@ -247,8 +341,9 @@ describe('WorkflowEngine - Node Execution Logic', () => {
         }),
       });
 
-      // Verify WebSocket event was sent to user
-      expect(websocketGateway.sendToUser).toHaveBeenCalledWith(
+      // Verify WebSocket event was sent to the project room and the owning user
+      expect(websocketGateway.sendToProjectAndUser).toHaveBeenCalledWith(
+        'project-456',
         'user-123',
         expect.objectContaining({
           type: 'human:approval_required',
@@ -864,6 +959,7 @@ describe('WorkflowEngine - Node Execution Logic', () => {
         expect(prismaService.workflowRun.findMany).toHaveBeenCalledWith({
           where: {
             status: 'running',
+            parentRunId: null,
           },
         });
 

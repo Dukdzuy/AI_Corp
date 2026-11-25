@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
+import { InfrastructureModule } from './infrastructure/infrastructure.module';
 import { LLMModule } from './modules/llm';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { AgentsModule } from './modules/agents/agents.module';
@@ -13,7 +14,19 @@ import { AuthModule } from './modules/auth/auth.module';
 import { OrchestratorModule } from './modules/orchestrator/orchestrator.module';
 import { HealthModule } from './modules/health/health.module';
 import { CostModule } from './modules/cost/cost.module';
+import { EventsModule } from './modules/events/events.module';
+import { OoadMetricsModule } from './modules/ooad-metrics/ooad-metrics.module';
+import { ProjectArtifactsModule } from './modules/project-artifacts/project-artifacts.module';
+import { LearningModule } from './modules/learning/learning.module';
 import { EnvValidator } from './modules/security/env-validator';
+import { AccessModule } from './modules/access/access.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { UsersModule } from './modules/users/users.module';
+import { ReportingModule } from './modules/reporting/reporting.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { EstimationModule } from './modules/estimation/estimation.module';
+import { CodeQualityModule } from './modules/code-quality/code-quality.module';
 
 @Module({
   imports: [
@@ -22,6 +35,8 @@ import { EnvValidator } from './modules/security/env-validator';
       envFilePath: '.env',
     }),
     PrismaModule,
+    InfrastructureModule,
+    EventsModule, // Task 10: Import EventsModule (@Global module)
     LLMModule,
     ProjectsModule,
     AgentsModule,
@@ -34,6 +49,18 @@ import { EnvValidator } from './modules/security/env-validator';
     OrchestratorModule,
     HealthModule,
     CostModule,
+    OoadMetricsModule,
+    ProjectArtifactsModule,
+    LearningModule,
+    // Phase 5: enterprise features & security
+    AuditModule,
+    AccessModule,
+    UsersModule,
+    ReportingModule,
+    IntegrationsModule,
+    AnalyticsModule, // Phase 6
+    EstimationModule,
+    CodeQualityModule,
   ],
   providers: [EnvValidator],
 })

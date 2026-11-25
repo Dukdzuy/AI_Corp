@@ -18,13 +18,16 @@ model User {
   id            String    @id @default(uuid())
   email         String    @unique
   name          String
-  role          String    @default("board_member")
+  role          String    @default("board_member") // admin, board_member, viewer (Task 20: RolePolicy)
+  isActive      Boolean   @default(true)           // false = access revoked (UC-008-2)
   passwordHash  String
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   projects      Project[]
   approvals     Approval[]
+  apiKeys       ApiKey[]
+  webhooks      Webhook[]
 }
 
 // ============================================================================
@@ -42,6 +45,7 @@ model Project {
   createdById     String
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  ooadMetadata    Json?     // Stores use cases, domain model, patterns, architecture
 
   createdBy       User      @relation(fields: [createdById], references: [id])
   milestones      Milestone[]
@@ -49,6 +53,8 @@ model Project {
   workflowRuns    WorkflowRun[]
   agentMessages   AgentMessage[]
   apiUsageLogs    ApiUsageLog[]
+  qualityGateLogs QualityGateLog[]
+  estimates       ProjectEstimate[]
 
   @@index([createdById])
   // Requirement 17.2: budget must be positive when provided
@@ -167,21 +173,59 @@ model AgentMessage {
 // ============================================================================
 
 model WorkflowRun {
-  id            String    @id @default(uuid())
-  projectId     String
-  workflowDefId String
-  status        String    @default("running") // running, paused, completed, failed, cancelled
-  currentNodeId String?
-  context       Json      // Workflow execution context
-  startedAt     DateTime  @default(now())
-  completedAt   DateTime?
+  id                 String    @id @default(uuid())
+  projectId          String
+  workflowDefId      String
+  workflowDefVersion String?   // Version the run is pinned to (Task 17); null = latest registered
+  status             String    @default("running") // running, paused, completed, failed, cancelled
+  currentNodeId      String?
+  context            Json      // Workflow execution context
+  parentRunId        String?   // Sub-workflow runs (Task 16): the run that started this one
+  parentNodeId       String?   // ...and its sub_workflow node
+  startedAt          DateTime  @default(now())
+  completedAt        DateTime?
 
   project       Project   @relation(fields: [projectId], references: [id])
+  parentRun     WorkflowRun?  @relation("SubWorkflowRuns", fields: [parentRunId], references: [id], onDelete: Cascade)
+  childRuns     WorkflowRun[] @relation("SubWorkflowRuns")
   steps         WorkflowStep[]
   approvals     Approval[]
+  snapshots     WorkflowSnapshot[]
 
   @@index([projectId])
   @@index([status])
+  @@index([parentRunId])
+}
+
+// Memento of a run taken before each node executes; rollback restores one (Task 17)
+model WorkflowSnapshot {
+  id            String    @id @default(uuid())
+  workflowRunId String
+  sequence      Int       // 1, 2, 3 ... per run
+  nodeId        String
+  status        String
+  context       Json
+  createdAt     DateTime  @default(now())
+
+  workflowRun   WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowRunId, sequence])
+  @@index([workflowRunId, createdAt])
+}
+
+// Immutable workflow definitions, one row per id + version (Task 17); templates write here (Task 19)
+model WorkflowDefinitionVersion {
+  id           String   @id @default(uuid())
+  definitionId String
+  version      String
+  name         String
+  definition   Json
+  templateId   String?
+  parameters   Json?
+  createdAt    DateTime @default(now())
+
+  @@unique([definitionId, version])
+  @@index([templateId])
 }
 
 model WorkflowStep {
@@ -204,6 +248,8 @@ model WorkflowStep {
 
   @@index([workflowRunId, nodeId])
   @@index([status])
+  @@index([agentRole, startedAt]) // Phase 6: agent analytics and estimation history
+  @@index([startedAt])
   // Requirement 17.6: Timestamp ordering validation enforced in WorkflowService
 }
 
@@ -217,7 +263,7 @@ model Approval {
   workflowRunId String
   userId        String
   approvalType  String
-  status        String    @default("pending") // pending, approved, rejected - transitions validated in app layer
+  status        String    @default("pending") // pending, approved, rejected, cancelled (rollback) - transitions validated in app layer
   requestData   Json
   comment       String?   @db.Text
   requestedAt   DateTime  @default(now())
@@ -270,4 +316,155 @@ model LLMGatewayStatus {
   consecutiveFailures Int       @default(0) // Counter for consecutive failures (triggers circuit breaker at threshold 3)
   metadata            Json?     // Additional health metrics (error details, latency, etc.)
   updatedAt           DateTime  @updatedAt // Last status update timestamp
+}
+
+// ============================================================================
+// OOAD Quality Gate Logs
+// ============================================================================
+
+model QualityGateLog {
+  id        String   @id @default(uuid())
+  projectId String
+  gateId    String
+  passed    Boolean
+  checklist Json
+  timestamp DateTime @default(now())
+
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, timestamp])
+}
+
+// ============================================================================
+// Enterprise features (Phase 5)
+// ============================================================================
+
+// Append-only audit trail (Task 21): user actions (HTTP), access denials and domain events
+model AuditLog {
+  id            String   @id @default(uuid())
+  timestamp     DateTime @default(now())
+  actorType     String   // user, api_key, agent, system, anonymous
+  userId        String?
+  actorLabel    String?  // email, key name or agent role, kept for readability after a user is deleted
+  apiKeyId      String?
+  agentRole     String?
+  action        String   // "project.create", "auth.login", "access.denied", "workflow.completed"
+  resourceType  String   // "Project", "User", "Workflow", "Auth"
+  resourceId    String?
+  projectId     String?
+  changes       Json?    // { before, after, diff } or the sanitised request
+  ipAddress     String?
+  userAgent     String?
+  success       Boolean  @default(true)
+  errorMessage  String?  @db.Text
+
+  @@index([timestamp])
+  @@index([userId, timestamp])
+  @@index([action, timestamp])
+  @@index([projectId, timestamp])
+}
+
+// Integration API keys (Task 22): only a SHA-256 hash of the secret is stored
+model ApiKey {
+  id          String    @id                // public key id, part of the token
+  name        String
+  ownerId     String
+  secretHash  String
+  scopes      String[]                     // permissions, a subset of the owner's role
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+}
+
+// Outgoing webhooks (Task 22): signed with HMAC-SHA256 using `secret`
+model Webhook {
+  id          String    @id @default(uuid())
+  ownerId     String
+  projectId   String?   // null = every project the owner can read
+  url         String
+  events      String[]
+  secret      String
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  deliveries  WebhookDelivery[]
+
+  @@index([ownerId])
+  @@index([projectId])
+}
+
+model WebhookDelivery {
+  id           String   @id @default(uuid())
+  webhookId    String
+  event        String
+  payload      Json
+  status       String   // delivered, failed
+  attempts     Int
+  responseCode Int?
+  error        String?  @db.Text
+  durationMs   Int
+  createdAt    DateTime @default(now())
+
+  webhook      Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt])
+}
+
+// ============================================================================
+// Phase 6, Task 25: effort and cost forecasts, kept to compare with the outcome
+// ============================================================================
+
+model ProjectEstimate {
+  id                  String   @id @default(uuid())
+  projectId           String
+  stage               String   // start (workflow started), planned (PM created the tasks)
+  predictedDurationMs Int      // summed agent working time
+  predictedCost       Decimal  @db.Decimal(10, 6)
+  confidence          String   // low, medium, high
+  detail              Json     // per-role forecast, features, imputed features
+  createdAt           DateTime @default(now())
+
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, createdAt])
+}
+
+// ============================================================================
+// LLM providers & models configured from the web app
+// ============================================================================
+
+// apiKeyEncrypted is AES-256-GCM (LLM_SECRET_KEY); the API never returns it
+model LlmProvider {
+  id              String     @id @default(uuid())
+  name            String     @unique
+  kind            String     // openai-compatible | anthropic
+  baseUrl         String?
+  apiKeyEncrypted String?
+  apiKeyLast4     String?
+  isEnabled       Boolean    @default(true)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  models          LlmModel[]
+}
+
+model LlmModel {
+  id          String      @id @default(uuid())
+  providerId  String
+  modelId     String      // id sent to the provider, e.g. "gpt-4o"
+  displayName String
+  category    String      @default("general")
+  isEnabled   Boolean     @default(true)
+  source      String      @default("manual") // manual | synced
+  createdAt   DateTime    @default(now())
+
+  provider    LlmProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, modelId])
 }

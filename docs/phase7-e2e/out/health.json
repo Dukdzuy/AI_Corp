@@ -1,0 +1,22 @@
+{
+  "status": "healthy",
+  "timestamp": "2026-11-03T02:29:39.723Z",
+  "uptimeSeconds": 24,
+  "checks": [
+    {
+      "name": "database",
+      "status": "healthy",
+      "latencyMs": 2
+    },
+    {
+      "name": "redis",
+      "status": "healthy",
+      "latencyMs": 2
+    },
+    {
+      "name": "ninerouter",
+      "status": "healthy",
+      "latencyMs": 10
+    }
+  ]
+}

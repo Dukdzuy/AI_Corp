@@ -1,236 +1,251 @@
-import { Logger } from '@nestjs/common';
-import { AgentRole, ChatParams, ChatResult, ToolDefinition, ResourceLimits, ToolResult, ModelRouteConfig } from '@ai-corp/shared-types';
-import { MemoryService, MemoryMetadata, MemorySearchResult } from '../memory/memory.service';
-import { LLMProviderFactory } from '../llm/llm-provider.factory';
-import { ToolRegistry } from '../tools/tool.registry';
-import { SandboxExecutor } from '../tools/sandbox.executor';
-import { ApiUsageService } from '../llm/api-usage.service';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
+import { AgentRole, AgentThinkingEvent } from '@ai-corp/shared-types';
 import { AppWebSocketGateway } from '../websocket/websocket.gateway';
-import { AgentThinkingEvent, AgentActionEvent, AgentMessageEvent, WebSocketEventType } from '@ai-corp/shared-types';
-import { sanitizeUserInput, sanitizeToolOutput } from '../security/input-sanitizer';
-import { validateParameters } from '../security/parameter-validator';
+import { IAgent } from '../../domain/agent/interfaces/IAgent.interface';
+import { IAgentObserver, StateChangedEvent } from '../../domain/agent/interfaces/IAgentObserver.interface';
+import { IThinkingStrategy } from '../../domain/agent/interfaces/IThinkingStrategy.interface';
+import { IActionStrategy } from '../../domain/agent/interfaces/IActionStrategy.interface';
+import { AgentContext, AgentResult } from '../../domain/common/types';
+import { AgentStateMachine } from '../../domain/agent/AgentStateMachine';
+import { AgentEventEmitter } from '../../domain/agent/AgentEventEmitter';
+import { AgentState } from '../../domain/agent/AgentState';
+import { EventBus } from '../../domain/events/EventBus';
+import { TaskAssignedEvent } from '../../domain/events/TaskAssignedEvent';
+import { TaskCompletedEvent } from '../../domain/events/TaskCompletedEvent';
+import { AgentCompletedTaskEvent } from '../../domain/events/AgentCompletedTaskEvent';
+import { AgentErrorEvent } from '../../domain/events/AgentErrorEvent';
+import { RoleProfile } from './profiles/role-profile';
 
-export abstract class BaseAgent {
+/**
+ * BaseAgent
+ *
+ * The one agent contract (IAgent) shared by every role. A concrete agent only supplies its
+ * RoleProfile and its thinking/action strategies; everything else (state machine, domain
+ * events, WebSocket updates, error classification) lives here.
+ *
+ * There is one agent instance per role, but several workflow runs can use it at the same
+ * time, so every execute() walks its own state machine (one task lifecycle). The agent's
+ * state is the state of its most recent task that is still running, else of the last one.
+ * (Phase 6 fix: a single shared machine made concurrent runs fail with "Invalid state
+ * transition" and left the role unusable after a permanent error.)
+ *
+ * @pattern Template Method (execute: assign → think → act → complete), State (AgentStateMachine),
+ *          Strategy (IThinkingStrategy / IActionStrategy), Observer (AgentEventEmitter)
+ */
+export abstract class BaseAgent<TOutput = unknown> implements IAgent, OnModuleDestroy {
   protected readonly logger = new Logger(this.constructor.name);
+  /** Lifecycle of the most recent task */
+  protected stateMachine: AgentStateMachine;
+  /** Lifecycles of the tasks in progress, oldest first */
+  private readonly running = new Set<AgentStateMachine>();
+  protected readonly eventEmitter: AgentEventEmitter;
 
   constructor(
-    protected readonly role: AgentRole,
-    protected readonly systemPrompt: string,
-    protected readonly modelConfig: ModelRouteConfig,
-    protected readonly memoryService: MemoryService,
-    protected readonly llmFactory: LLMProviderFactory,
-    protected readonly toolRegistry: ToolRegistry,
-    protected readonly sandboxExecutor: SandboxExecutor,
-    protected readonly apiUsageService: ApiUsageService,
-    protected readonly websocketGateway: AppWebSocketGateway
-  ) {}
+    protected readonly profile: RoleProfile,
+    protected readonly thinkingStrategy: IThinkingStrategy,
+    protected readonly actionStrategy: IActionStrategy<TOutput>,
+    protected readonly websocketGateway: AppWebSocketGateway,
+    protected readonly eventBus: EventBus,
+    stateMachine?: AgentStateMachine,
+    eventEmitter?: AgentEventEmitter
+  ) {
+    this.stateMachine = stateMachine || new AgentStateMachine(AgentState.IDLE);
+    this.eventEmitter = eventEmitter || new AgentEventEmitter();
+  }
 
-  /**
-   * Agents must implement their specific thinking process
-   */
-  abstract think(context: any): Promise<any>;
+  /** The role is the agent's identity: one agent instance per role */
+  getId(): string {
+    return this.profile.role;
+  }
 
-  /**
-   * Agents must implement their specific action execution
-   */
-  abstract act(context: any): Promise<any>;
+  getRole(): AgentRole {
+    return this.profile.role;
+  }
 
-  /**
-   * Execute the thought and action cycle.
-   */
-  async execute(context: any): Promise<any> {
-    const thought = await this.think(context);
-    const action = await this.act(context);
-    return { thought, action };
+  getProfile(): RoleProfile {
+    return this.profile;
+  }
+
+  getState(): AgentState {
+    const active = [...this.running];
+    return (active[active.length - 1] ?? this.stateMachine).getCurrentState();
+  }
+
+  addEventListener(observer: IAgentObserver): void {
+    this.eventEmitter.addObserver(observer);
+  }
+
+  removeEventListener(observer: IAgentObserver): void {
+    this.eventEmitter.removeObserver(observer);
   }
 
   /**
-   * Emit an agent thinking event
+   * Lifecycle cleanup (NestJS OnModuleDestroy hook): clears observer references so a torn-down
+   * module does not leak them.
    */
-  protected emitThinking(projectId: string, thought: string) {
+  onModuleDestroy() {
+    this.logger.debug(`Cleaning up agent ${this.getRole()} - clearing observers`);
+    this.eventEmitter.clearObservers();
+  }
+
+  /** Manual cleanup for an agent that is decommissioned while the module keeps running */
+  cleanup(): void {
+    this.logger.debug(`Manual cleanup for agent ${this.getRole()}`);
+    this.eventEmitter.clearObservers();
+  }
+
+  /**
+   * Execute the think → act cycle (Template Method).
+   *
+   * State flow:
+   * - IDLE → THINKING (before thinkingStrategy.think())
+   * - THINKING → ACTING (after think(), before actionStrategy.act())
+   * - ACTING → COMPLETED (after a successful act())
+   * - COMPLETED → IDLE (ready for the next task)
+   * - any state → ERROR on exception; ERROR → IDLE only for transient errors
+   *
+   * The context's taskType is resolved against the role profile first, so strategies always
+   * receive a task type their role supports.
+   */
+  async execute(input: AgentContext): Promise<AgentResult<TOutput>> {
+    const context = this.prepareContext(input);
+    const role = this.getRole();
+    const agentId = this.getId();
+    const projectId = context.projectId || 'unknown';
+    const taskId = context.taskId || 'unknown';
+    const taskTitle = context.task || context.taskType || 'Untitled Task';
+    const startTime = Date.now();
+    const lifecycle = new AgentStateMachine(AgentState.IDLE);
+    this.stateMachine = lifecycle;
+    this.running.add(lifecycle);
+    const transition = (to: AgentState, reason: string) => this.transition(lifecycle, to, projectId, reason);
+
+    try {
+      await this.publish(new TaskAssignedEvent(taskId, projectId, role, taskTitle, context.priority));
+
+      transition(AgentState.THINKING, 'Starting thought process');
+      const thought = await this.thinkingStrategy.think(context);
+      this.emitThinking(projectId, taskId, thought.reasoning);
+      this.eventEmitter.emitThinkingCompleted({ agentId, agentRole: role, taskId, thought, timestamp: new Date() });
+
+      transition(AgentState.ACTING, 'Executing action based on thought');
+      const action = await this.actionStrategy.act(context, thought);
+      this.eventEmitter.emitActionCompleted({
+        agentId,
+        agentRole: role,
+        taskId,
+        actionType: context.taskType || this.profile.defaultTaskType,
+        toolName: thought.plannedActions[0]?.toolName || 'llm',
+        parameters: {},
+        result: action,
+        timestamp: new Date(),
+      });
+
+      transition(AgentState.COMPLETED, 'Task completed successfully');
+
+      const executionTimeMs = Date.now() - startTime;
+      await this.publish(new TaskCompletedEvent(taskId, projectId, role, taskTitle, executionTimeMs, { thought, action }));
+      await this.publish(new AgentCompletedTaskEvent(agentId, taskId, projectId, { thought, action }));
+
+      transition(AgentState.IDLE, 'Agent ready for next task');
+      return { thought, action };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const failedIn = lifecycle.getCurrentState();
+      transition(AgentState.ERROR, `Error during execution: ${message}`);
+
+      this.eventEmitter.emitError({
+        agentId,
+        agentRole: role,
+        taskId,
+        error: error instanceof Error ? error : new Error(message),
+        timestamp: new Date(),
+        context: { projectId, currentState: failedIn.toString() },
+      });
+      await this.publish(new AgentErrorEvent(agentId, taskId, projectId, message));
+      this.logger.error(`Agent ${role} execution error: ${message}`, error instanceof Error ? error.stack : undefined);
+
+      // Transient errors (timeouts, rate limits) leave the agent reusable; permanent ones keep it in ERROR
+      if (this.isTransientError(error)) {
+        transition(AgentState.IDLE, 'Agent reset after transient error');
+      }
+      throw error;
+    } finally {
+      this.running.delete(lifecycle);
+    }
+  }
+
+  /** Resolve the task type for this role (unknown types fall back to the role's default) */
+  protected prepareContext(input: AgentContext): AgentContext {
+    const taskType = this.profile.resolveTaskType(input.taskType);
+    if (input.taskType && input.taskType !== taskType) {
+      this.logger.warn(
+        `Role ${this.getRole()} does not support task type '${input.taskType}' ` +
+        `(supported: ${this.profile.taskTypes.join(', ')}); using '${taskType}'`
+      );
+    }
+    return { ...input, taskType };
+  }
+
+  /**
+   * Classify errors as transient (retryable) or permanent (non-retryable).
+   * Transient: network timeouts, rate limits, temporary outages.
+   * Permanent: authentication failures, missing dependencies, invalid configuration.
+   */
+  protected isTransientError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    const message = error.message.toLowerCase();
+
+    const transient = ['timeout', 'econnrefused', 'enotfound', 'rate limit', '503', '504', 'connection reset'];
+    if (transient.some(t => message.includes(t))) return true;
+
+    const permanent = ['authentication', 'authorization', 'api key', 'not found', 'does not exist', 'invalid config', 'missing dependency'];
+    if (permanent.some(p => message.includes(p))) return false;
+
+    // Default: treat as transient so the agent can be retried
+    return true;
+  }
+
+  private async publish(event: Parameters<EventBus['publish']>[0]): Promise<void> {
+    await this.eventBus
+      .publish(event)
+      .catch(err => this.logger.error(`Failed to publish ${event.constructor.name}: ${err.message}`));
+  }
+
+  private transition(lifecycle: AgentStateMachine, to: AgentState, projectId: string, reason: string): void {
+    const from = lifecycle.getCurrentState();
+    lifecycle.transitionTo(to, reason);
+    this.emitStateChanged(from, to, projectId, reason);
+  }
+
+  /** Emit an agent thinking event to the project room and to the Virtual Office */
+  protected emitThinking(projectId: string, taskId: string, thought: string) {
     const event: AgentThinkingEvent = {
-      agentId: this.role,
-      agentRole: this.role,
-      taskId: 'unknown',
+      projectId,
+      agentId: this.getId(),
+      agentRole: this.getRole(),
+      taskId,
       message: thought,
-    } as any;
+    } as AgentThinkingEvent;
     this.websocketGateway.sendToProject(projectId, { type: 'agent:thinking', payload: event });
-    // Also broadcast to all clients for VirtualOffice
     this.websocketGateway.broadcastEvent({ type: 'agent:thinking', payload: event });
   }
 
-  /**
-   * Emit an agent action event
-   */
-  protected emitAction(projectId: string, taskId: string, actionType: string, toolName: string, parameters: any = {}) {
-    const event: AgentActionEvent = {
-      agentId: this.role,
-      agentRole: this.role,
-      taskId,
-      actionType,
-      toolName,
-      parameters
-    };
-    this.websocketGateway.sendToProject(projectId, { type: 'agent:action', payload: event });
-    // Also broadcast to all clients for VirtualOffice
-    this.websocketGateway.broadcastEvent({ type: 'agent:action', payload: event });
-  }
-
-  /**
-   * Emit an agent message event
-   */
-  protected emitMessage(projectId: string, message: string, toAgent: AgentRole | 'all' = 'all') {
-    const event: AgentMessageEvent = {
-      agentId: this.role,
-      agentRole: this.role,
-      fromAgent: this.role,
-      toAgent,
-      message,
-      messageType: 'chat',
-      timestamp: new Date()
-    };
-    this.websocketGateway.sendToProject(projectId, { type: 'agent:message', payload: event });
-  }
-
-  /**
-   * Load context-relevant memories using the vector database
-   */
-  protected async loadMemory(namespace: string, query: string, limit = 5): Promise<MemorySearchResult[]> {
-    return this.memoryService.searchMemories(this.role, namespace, query, limit);
-  }
-
-  /**
-   * Save a new memory observation to the vector database
-   */
-  protected async saveMemory(namespace: string, content: string, importance: number = 5, projectId?: string): Promise<string> {
-    const metadata: MemoryMetadata = { importance, projectId };
-    // Look up actual agent UUID from database
-    const agentId = await this.memoryService.getAgentIdByRole(this.role);
-    if (!agentId) {
-      this.logger.warn(`No agent found for role '${this.role}', skipping memory save`);
-      return 'skipped-no-agent';
-    }
-    return this.memoryService.saveMemory(agentId, this.role, namespace, content, metadata);
-  }
-
-  /**
-   * Invoke the LLM Gateway.
-   * Reads model config from DB (PATCH /api/models/:role) before each call,
-   * falling back to the hardcoded constructor value.
-   */
-  protected async callLLM(params: Omit<ChatParams, 'model'>, projectId?: string): Promise<ChatResult> {
-    // Fetch latest model config from DB (user may have changed it via UI)
-    const modelConfig = await this.memoryService.getModelConfigForAgent(this.role, this.modelConfig);
-
-    const provider = this.llmFactory.getProvider(modelConfig);
-    const startTime = Date.now();
-    
-    try {
-      const fullParams: ChatParams = { ...params, model: modelConfig.model };
-      
-      // Inject system prompt if not present
-      if (!fullParams.messages.some(m => m.role === 'system')) {
-        fullParams.messages.unshift({ role: 'system', content: this.systemPrompt });
-      }
-
-      // Sanitize all message contents to prevent prompt injection
-      fullParams.messages = fullParams.messages.map(msg => ({
-        ...msg,
-        content: sanitizeUserInput(msg.content)
-      }));
-
-      const result = await provider.chat(fullParams);
-      const responseTimeMs = Date.now() - startTime;
-
-      // Structured logging for LLM call
-      this.logger.log(JSON.stringify({
-        event: 'llm_call',
-        agentRole: this.role,
-        projectId,
-        requestedModel: modelConfig.model,
-        actualModelUsed: result.actualModelUsed,
-        actualProvider: result.actualProvider,
-        isFallbackTriggered: result.isFallbackTriggered,
-        promptTokens: result.tokenUsage.promptTokens,
-        completionTokens: result.tokenUsage.completionTokens,
-        totalTokens: result.tokenUsage.totalTokens,
-        rtkTokenSaved: result.rtkTokenSaved,
-        responseTimeMs,
-      }));
-
-      // Log API usage for cost tracking
-      await this.apiUsageService.logUsage({
-        projectId,
-        agentRole: this.role,
-        requestedModel: modelConfig.model,
-        actualModelUsed: result.actualModelUsed,
-        actualProvider: result.actualProvider,
-        isFallbackTriggered: result.isFallbackTriggered,
-        promptTokens: result.tokenUsage.promptTokens,
-        completionTokens: result.tokenUsage.completionTokens,
-        rtkTokenSaved: result.rtkTokenSaved,
-        responseTimeMs,
-      });
-
-      return result;
-    } catch (error) {
-      this.logger.error(`LLM call failed: ${error instanceof Error ? error.message : String(error)}`);
-      throw error;
-    }
-  }
-
-  /**
-   * Execute an arbitrary shell command in the sandbox (bypasses tool registry)
-   */
-  protected async executeSandboxCommand(command: string, limits?: ResourceLimits): Promise<ToolResult> {
-    const defaultLimits: ResourceLimits = limits || {
-      maxMemoryMB: 256,
-      maxCPUPercent: 50,
-      maxDiskMB: 100,
-      timeout: 30000
-    };
-    return this.sandboxExecutor.executeInSandbox('custom_command', command, defaultLimits);
-  }
-
-  /**
-   * Execute a tool in the isolated Sandbox
-   */
-  protected async executeTool(toolName: string, command: string, params: Record<string, unknown> = {}, customLimits?: ResourceLimits): Promise<ToolResult> {
-    // 1. Check if tool exists and agent has access
-    if (!this.toolRegistry.isToolAuthorizedForRole(toolName, this.role)) {
-      throw new Error(`Tool '${toolName}' is not authorized for role '${this.role}'`);
-    }
-
-    const toolDef = this.toolRegistry.getTool(toolName);
-    if (!toolDef) {
-      throw new Error(`Tool '${toolName}' not found`);
-    }
-
-    // 2. Validate parameters against tool schema
-    if (toolDef.parameters && Object.keys(params).length > 0) {
-      const validation = validateParameters(params, toolDef.parameters, toolName);
-      if (!validation.valid) {
-        throw new Error(`Parameter validation failed: ${validation.errors.join('; ')}`);
-      }
-    }
-
-    if (!toolDef.requiresSandbox) {
-      // Execute outside sandbox (e.g. create_milestone which just hits DB)
-      return { success: true, output: `Executed ${toolName} without sandbox`, executionTimeMs: 10, resourceUsage: { memoryMB: 0, cpuPercent: 0 } };
-    }
-
-    const limits = customLimits || toolDef.resourceLimits || {
-      maxMemoryMB: 256,
-      maxCPUPercent: 50,
-      maxDiskMB: 100,
-      timeout: toolDef.timeout || 30000
+  /** Emit a state change via AgentEventEmitter (observers) and WebSocket (UI) */
+  protected emitStateChanged(previousState: AgentState, currentState: AgentState, projectId: string, reason?: string) {
+    const event: StateChangedEvent & { projectId: string } = {
+      projectId,
+      agentId: this.getId(),
+      agentRole: this.getRole(),
+      previousState,
+      currentState,
+      timestamp: new Date(),
+      reason,
     };
 
-    const result = await this.sandboxExecutor.executeInSandbox(toolName, command, limits);
-    // Sanitize tool output to prevent injection in subsequent LLM calls
-    return {
-      ...result,
-      output: sanitizeToolOutput(result.output, toolName)
-    };
+    this.eventEmitter.emitStateChanged(event);
+    this.websocketGateway.sendToProject(projectId, { type: 'agent:state_changed', payload: event });
+    this.websocketGateway.broadcastEvent({ type: 'agent:state_changed', payload: event });
+    this.logger.debug(`Agent ${this.getRole()} state: ${previousState} → ${currentState}${reason ? ` (${reason})` : ''}`);
   }
 }

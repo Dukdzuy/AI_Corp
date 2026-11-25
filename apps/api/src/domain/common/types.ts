@@ -24,6 +24,16 @@ export interface AgentContext {
   
   /** Task description */
   task: string;
+
+  /** Task priority, when the caller knows it */
+  priority?: string;
+
+  /**
+   * Workflow node task type (e.g. planMilestones, complete_project).
+   * BaseAgent resolves it against the role's RoleProfile before the strategies run,
+   * so strategies always see a task type their role supports.
+   */
+  taskType?: string;
   
   /** Project-level context data */
   projectContext: {
@@ -41,6 +51,32 @@ export interface AgentContext {
   
   /** Additional variables from workflow or previous steps */
   variables?: Record<string, unknown>;
+
+  /**
+   * Workflow variables flattened onto the context by the workflow engine
+   * (see AgentTaskStrategy). Earlier agents' outputs reach later agents here.
+   */
+  goal?: string;
+  projectName?: string;
+  projectDescription?: string;
+  projectSummary?: string;
+  /** Node-level constraints from the workflow definition, e.g. a template's database choice (Task 19) */
+  constraints?: string;
+  milestone?: string;
+  code?: string;
+  architecture?: string;
+  /** Traceability report written by QC, read by QA */
+  qcReport?: string;
+  /** Failing acceptance tests reported by QC, read by QA */
+  failingTests?: string[];
+  /** Collaboration (Task 15): DEV's accepted plan, the Architect's feedback, BA's answers */
+  implementationPlan?: string;
+  designFeedback?: string;
+  clarifications?: string[];
+  /** The question a clarification REQUEST asks BA ("UC-xxx: question") */
+  clarificationQuestion?: string;
+  /** Collaboration pattern this turn belongs to (set by agent_collaboration nodes) */
+  collaboration?: string;
 }
 
 /**
@@ -55,6 +91,9 @@ export interface AgentThought {
   
   /** Confidence level (0-1) */
   confidence: number;
+
+  /** Memory contents recalled while thinking, handed to the action phase */
+  memories?: string[];
   
   /** Additional metadata */
   metadata?: Record<string, unknown>;
@@ -77,12 +116,12 @@ export interface AgentAction {
 /**
  * Result of agent action execution
  */
-export interface AgentActionResult {
+export interface AgentActionResult<TOutput = unknown> {
   /** Whether the action succeeded */
   success: boolean;
   
-  /** Output from the action */
-  output: unknown;
+  /** Output from the action (typed per role, see domain/agent/AgentOutputs) */
+  output: TOutput | null;
   
   /** Error message if failed */
   error?: string;
@@ -94,12 +133,12 @@ export interface AgentActionResult {
 /**
  * Combined result of agent execution (thought + action)
  */
-export interface AgentResult {
+export interface AgentResult<TOutput = unknown> {
   /** The thinking process result */
   thought: AgentThought;
   
   /** The action execution result */
-  action: AgentActionResult;
+  action: AgentActionResult<TOutput>;
 }
 
 /**

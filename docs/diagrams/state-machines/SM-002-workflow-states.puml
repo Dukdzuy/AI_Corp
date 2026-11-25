@@ -1,0 +1,176 @@
+@startuml SM-002-workflow-states
+title Workflow State Machine - State Transitions
+'Based on: apps/api/prisma/schema.prisma WorkflowRun.status
+'Valid states: running, paused, completed, failed, cancelled
+
+[*] --> RUNNING : <b>startWorkflow()</b>\n[guard: projectActive]\naction: initContext()
+
+state RUNNING {
+  [*] --> NODE_EXECUTION
+  
+  state NODE_EXECUTION {
+    [*] --> LoadingNode
+    LoadingNode --> ValidatingNode
+    ValidatingNode --> ExecutingNode
+    ExecutingNode --> NodeComplete
+  }
+  NODE_EXECUTION : <b>Entry:</b> Load node definition
+  NODE_EXECUTION : <b>Do:</b> Execute node logic
+  NODE_EXECUTION : <b>Exit:</b> Save node result
+  
+  state PARALLEL_EXECUTION {
+    state fork_branches <<fork>>
+    state join_branches <<join>>
+    [*] --> ForkingBranches
+    ForkingBranches --> fork_branches
+    fork_branches --> ParallelWork
+    state ParallelWork {
+      [*] --> Branch1
+      [*] --> Branch2
+      [*] --> Branch3
+    }
+    ParallelWork : <b>Entry:</b> Allocate resources
+    ParallelWork : <b>Do:</b> Execute in parallel
+    ParallelWork : <b>Exit:</b> Join results
+    ParallelWork --> join_branches
+    join_branches --> JoiningResults
+    JoiningResults --> SynchronizationPoint
+  }
+  PARALLEL_EXECUTION : <b>Entry:</b> Fork execution paths
+  PARALLEL_EXECUTION : <b>Exit:</b> Merge all results
+  
+  state APPROVAL_WAITING {
+    [*] --> SendingRequest
+    SendingRequest --> AwaitingDecision
+    AwaitingDecision --> DecisionReceived
+  }
+  APPROVAL_WAITING : <b>Entry:</b> Pause workflow, send approval request
+  APPROVAL_WAITING : <b>Exit:</b> Resume workflow with decision
+  
+  NODE_EXECUTION --> PARALLEL_EXECUTION : [guard: isParallelNode()]\naction: fork()
+  PARALLEL_EXECUTION --> NODE_EXECUTION : [guard: allBranchesComplete()]\naction: join()
+  NODE_EXECUTION --> APPROVAL_WAITING : [guard: requiresApproval()]\naction: pause()
+  APPROVAL_WAITING --> NODE_EXECUTION : [guard: approved()]\naction: resume()
+  
+}
+RUNNING : <b>Composite State Entry:</b> Set status = "running"
+RUNNING : <b>Composite State Exit:</b> Save execution context
+RUNNING : <b>Invariant:</b> currentNodeId is set
+
+state PAUSED {
+  [*] --> WaitingForApproval
+  WaitingForApproval --> CheckingTimeout
+  state timeout_check <<choice>>
+  CheckingTimeout --> timeout_check
+  timeout_check --> WaitingForApproval : [timeout not reached]
+}
+PAUSED : <b>Entry:</b> Pause all agents, persist state
+PAUSED : <b>Exit:</b> Restore execution context
+PAUSED : <b>Internal:</b> Heartbeat every 1min
+
+state COMPLETED {
+  [*] --> GeneratingReport
+  GeneratingReport --> ArchivingData
+  ArchivingData --> FinalCleanup
+}
+COMPLETED : <b>Entry:</b> Calculate final metrics, close all tasks
+COMPLETED : <b>Exit:</b> Store completion timestamp
+COMPLETED : <b>Invariant:</b> completedAt is set
+
+state FAILED {
+  [*] --> LoggingFailure
+  LoggingFailure --> RollingBack
+  RollingBack --> NotifyingStakeholders
+}
+FAILED : <b>Entry:</b> Capture error, cancel pending tasks
+FAILED : <b>Exit:</b> Mark project as needs attention
+FAILED : <b>Data:</b> Error details in context.error
+
+state CANCELLED {
+  [*] --> StoppingAgents
+  StoppingAgents --> CleanupResources
+}
+CANCELLED : <b>Entry:</b> Stop all execution, cancel tasks
+CANCELLED : <b>Exit:</b> Release resources
+CANCELLED : <b>Trigger:</b> User cancellation
+
+RUNNING --> PAUSED : <b>approvalRequired()</b>\n[guard: approvalNode]\naction: requestApproval()
+
+PAUSED --> RUNNING : <b>approved()</b>\n[guard: decision == APPROVED]\naction: resume()
+
+RUNNING --> COMPLETED : <b>allNodesCompleted()</b>\n[guard: noMoreNodes()]\naction: finalize()
+
+RUNNING --> FAILED : <b>criticalError()</b>\n[guard: !canRecover()]\naction: rollback()
+
+RUNNING --> CANCELLED : <b>userCancels()</b>\n[guard: userRequest]\naction: stopAll()
+
+PAUSED --> CANCELLED : <b>userCancels()</b>\n[guard: userRequest]\naction: stopAll()
+
+FAILED --> RUNNING : <b>retry()</b>\n[guard: retryAllowed]\naction: restoreState()
+
+COMPLETED --> [*] : <b>archive()</b>
+
+FAILED --> [*] : <b>cleanup()</b>
+
+CANCELLED --> [*] : <b>cleanup()</b>
+
+note right of RUNNING
+  <b>Invariant:</b> 
+  - currentNodeId != null
+  - At least one agent active
+  
+  <b>SOLID - Single Responsibility:</b>
+  - Only manages execution flow
+  
+  <b>Pattern - State Pattern:</b>
+  - Sub-states for different phases
+end note
+
+note left of PAUSED
+  <b>Invariant:</b>
+  - Approval request exists
+  - Execution context saved
+  
+  <b>Timeout:</b> 
+  - Auto-reject after 2 hours
+  - Transition to FAILED
+  
+  <b>Business Rule:</b>
+  - Only one pending approval per workflow
+end note
+
+note right of COMPLETED
+  <b>Invariant:</b>
+  - All tasks in DONE status
+  - completedAt > startedAt
+  - Final cost calculated
+  
+  <b>Business Impact:</b>
+  - Triggers billing finalization
+  - Updates project metrics
+end note
+
+note left of FAILED
+  <b>Recovery Options:</b>
+  1. Manual retry (max 3 times)
+  2. Rollback to last checkpoint
+  3. Cancel and restart
+  
+  <b>Pattern - Memento:</b>
+  - Saves checkpoints for rollback
+end note
+
+note bottom of RUNNING
+  <b>Design Pattern: Composite State</b>
+  
+  RUNNING contains three concurrent sub-states
+  that can transition independently:
+  - NODE_EXECUTION: Sequential workflow steps
+  - PARALLEL_EXECUTION: Concurrent agent work
+  - APPROVAL_WAITING: Human-in-the-loop gates
+  
+  This allows complex orchestration while
+  maintaining clear state boundaries.
+end note
+
+@enduml

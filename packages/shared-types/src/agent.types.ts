@@ -5,7 +5,10 @@ export enum AgentRole {
   PM = 'PM',
   DEV = 'DEV',
   QA = 'QA',
+  QC = 'QC',
   MARKETING = 'MARKETING',
+  BA = 'BA',
+  ARCHITECT = 'ARCHITECT',
 }
 
 export interface AgentContext {
@@ -52,6 +55,8 @@ export interface MemoryMetadata {
 export interface ModelRouteConfig {
   provider: string;
   model: string;
+  /** a provider configured in the app (LlmProvider row); when set it takes precedence over `provider` */
+  providerId?: string;
   fallbackProvider?: string;
   tags?: string[];
 }
@@ -103,6 +108,8 @@ export interface ChatParams {
   temperature?: number;
   maxTokens?: number;
   tools?: ToolDefinition[];
+  /** Ask the model for structured output (OpenAI-compatible providers only) */
+  responseFormat?: { type: 'json_object' | 'text' };
 }
 
 export interface ToolCall {

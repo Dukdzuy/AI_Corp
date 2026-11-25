@@ -13,6 +13,18 @@ export default defineConfig({
     },
   },
   build: {
+    rollupOptions: {
+      output: {
+        // Long-lived vendor chunks: the app code changes more often than these libraries
+        manualChunks: {
+          react: ['react', 'react-dom', 'react-router-dom'],
+          antd: ['antd', '@ant-design/icons'],
+          'antd-x': ['@ant-design/x'],
+          charts: ['@ant-design/plots'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1500,
     commonjsOptions: {
       include: [/shared-types/, /node_modules/],
     },

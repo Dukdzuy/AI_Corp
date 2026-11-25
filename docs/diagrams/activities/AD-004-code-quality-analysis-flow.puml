@@ -1,0 +1,49 @@
+@startuml AD-004-code-quality-analysis-flow
+!theme plain
+title Code quality analysis and refinement (UC-023) - Activity Diagram
+' Rewritten 2026-10-26 (Phase 6, Task 26) to match the implementation: the platform analyses the
+' generated TypeScript itself (no ESLint / SonarQube / Istanbul in the sandbox).
+
+|DEV Agent|
+start
+:Write files from the LLM answer;
+
+|System|
+:Select source files (src/**, tests excluded);
+fork
+  :Syntax errors\n(ts.transpileModule diagnostics);
+fork again
+  :Complexity per function (McCabe),\nHalstead volume, maintainability index;
+fork again
+  :Security rules (eval, new Function, innerHTML,\ndocument.write, shell injection, secrets);
+fork again
+  :Layer rules on imports\n(domain <- application <- infrastructure / presentation);
+end fork
+:CodeQualityPolicy: score per file (100 - capped penalties),\nLOC-weighted project score, predicted QA verdict;
+if (Predicted verdict = fail?\n(score < 70, syntax error or layer violation)) then (yes)
+  if (CODE_QUALITY_REFINE = off?) then (no)
+    |DEV Agent|
+    :Rewrite the weakest files once,\nwith the findings in the prompt;
+    |System|
+    :Analyse the rewrite;
+    if (Score higher?) then (yes)
+      :Keep the rewritten files;
+    else (no)
+      :Keep the original files;
+    endif
+  endif
+endif
+:Write docs/code-quality.md;
+:Add codeQuality to the DEV output;
+
+|QA Agent|
+:Review with the STATIC ANALYSIS section as evidence;
+if (VERDICT) then (PASS)
+else (FAIL)
+  :DEV runs again (workflow loop);
+endif
+
+|System|
+:Compare predicted and real verdicts\n(Agent Analytics: QA prediction accuracy);
+stop
+@enduml

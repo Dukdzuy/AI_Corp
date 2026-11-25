@@ -76,12 +76,15 @@ Mở trình duyệt tại: **http://localhost:5173**
 2. Chọn tab **Đăng Ký**
 3. Nhập thông tin và click **Đăng Ký**
 
+Tài khoản tự đăng ký có vai trò `viewer` (chỉ xem). Admin nâng lên `board_member` ở trang **Users** để tạo dự án và duyệt. Khi chạy demo trên máy cá nhân có thể đặt `SIGNUP_ROLE=board_member` trong `apps/api/.env`; đặt `ALLOW_REGISTRATION=false` để tắt hẳn đăng ký.
+
 ### Phân Quyền
 
 | Vai Trò | Mô Tả |
 |---------|-------|
 | `admin` | Quản trị viên, đầy đủ quyền |
-| `board_member` | Xem dự án, duyệt approval, theo dõi chi phí |
+| `board_member` | Tạo và điều khiển dự án của mình, duyệt approval, theo dõi chi phí |
+| `viewer` | Chỉ xem dự án và báo cáo (mặc định khi tự đăng ký) |
 
 ---
 
@@ -107,7 +110,7 @@ Mở trình duyệt tại: **http://localhost:5173**
 Sau khi tạo dự án, workflow tự động chạy:
 
 ```
-CEO (Lên kế hoạch) → PM (Phân công) → Dev (Làm việc) → QA (Kiểm tra) → Marketing (Quảng cáo) → Duyệt
+CEO (Lên kế hoạch) → BA (Use case) → Architect (Thiết kế OOAD) → Quality gate → PM (Phân công theo use case) → Dev (Code) → QC (Test theo use case) → QA (Duyệt theo thiết kế) → Marketing (Quảng cáo) → Duyệt
 ```
 
 Theo dõi tiến độ tại **Virtual Office**.
@@ -162,8 +165,11 @@ Truy cập **Virtual Office** để xem agents đang hoạt động:
 |-------|--------|-----------|
 | **CEO** | Phòng Họp | Lên kế hoạch, quản lý dự án |
 | **PM** | Bàn Làm Việc | Phân công công việc |
-| **DEV** | Bàn Code | Viết code, test |
-| **QA** | Bàn Kiểm Tra | Kiểm tra code |
+| **BA** | Bàn Phân Tích | Viết use case, sơ đồ use case |
+| **ARCHITECT** | Bàn Thiết Kế | Domain model, sơ đồ lớp/tuần tự, design pattern, code skeleton |
+| **DEV** | Bàn Code | Viết code theo thiết kế |
+| **QC** | Bàn Kiểm Thử | Viết test theo use case, ma trận truy vết |
+| **QA** | Bàn Kiểm Tra | Quality gate OOAD, duyệt code theo thiết kế |
 | **MARKETING** | Phòng Marketing | Viết quảng cáo |
 
 ### Trạng Thái Agent
@@ -252,8 +258,19 @@ Truy cập **Dashboard** → Xem tổng quan:
 
 1. Truy cập menu **Agent Models**
 2. Chọn agent cần đổi
-3. Chọn model mới từ dropdown
+3. Chọn model mới từ dropdown (model được nhóm theo provider)
 4. Click **Save**
+
+### LLM Providers
+
+Menu **LLM Providers** (chỉ admin) để thêm provider và model ngay trên giao diện, không cần sửa `.env`:
+
+1. **Add provider** → chọn preset (9Router, OpenAI, OpenRouter, Groq, DeepSeek, Gemini, Ollama, Anthropic) hoặc tự nhập: tên, loại API (OpenAI-compatible / Anthropic), Base URL, API key
+2. **Test** để kiểm tra URL và key
+3. **Fetch models** để lấy danh sách model của provider (`GET /models`) và tick model cần dùng; hoặc mở rộng dòng provider → **Add model by id** để nhập tay
+4. Sang **Agent Models** để chọn model đó cho từng agent
+
+API key được mã hoá AES-256-GCM trong database bằng `LLM_SECRET_KEY` (không đặt thì dùng `JWT_SECRET`) và không bao giờ trả về frontend, chỉ hiện 4 ký tự cuối. Đổi `LLM_SECRET_KEY` thì phải nhập lại key. Lần chạy đầu tiên, 9Router trong `NINE_ROUTER_URL` / `NINE_ROUTER_API_KEY` được tự động nhập thành một provider và các agent đang dùng 9Router được gắn vào nó. Không thể xoá hoặc tắt provider/model đang có agent dùng.
 
 ### Models Hiện Có
 
@@ -271,9 +288,11 @@ Truy cập **Dashboard** → Xem tổng quan:
 |------|-------|----------|
 | `DATABASE_URL` | PostgreSQL URL | `postgresql://postgres:postgres@localhost:5432/neondb` |
 | `JWT_SECRET` | JWT signing key | `ai-corp-jwt-secret-key-2026` |
+| `LLM_SECRET_KEY` | Khoá mã hoá API key của các provider thêm trên trang LLM Providers | `JWT_SECRET` |
 | `PORT` | Port backend | `3000` |
 | `REDIS_HOST` | Redis host | `localhost` |
 | `REDIS_PORT` | Redis port | `6379` |
+| `PROJECTS_WORKSPACE_DIR` | Thư mục lưu file các dự án do agent tạo ra | `apps/api/workspace` |
 
 ### Reset Database
 

@@ -1,9 +1,15 @@
 import { WorkflowDefinition, AgentRole } from '@ai-corp/shared-types';
 
+/**
+ * Default OOAD-driven project workflow:
+ * CEO (milestones) → BA (use cases) → Architect (design + skeleton) → OOAD quality gate
+ * → PM (one task per use case) → DEV (implementation) → QC (acceptance tests + traceability)
+ * → QA (design conformance verdict) → Marketing → human approval → CEO (close-out)
+ */
 export const DEFAULT_WORKFLOW_DEFINITION: WorkflowDefinition = {
   id: 'default-project-workflow',
   name: 'Default Project Workflow',
-  version: '1.0.0',
+  version: '2.0.0',
   startNode: 'start',
   endNode: 'end',
   nodes: [
@@ -20,6 +26,43 @@ export const DEFAULT_WORKFLOW_DEFINITION: WorkflowDefinition = {
       },
     },
     {
+      id: 'analyze',
+      type: 'agent_task',
+      agentRole: 'BA' as AgentRole,
+      taskType: 'generateUseCases',
+      maxRetries: 3,
+      timeout: 180000,
+      metadata: {
+        promptTemplate: 'Analyze the requirements and produce structured use cases with a use case diagram.',
+        description: 'BA writes use cases (OOAD analysis)',
+      },
+    },
+    {
+      id: 'design',
+      type: 'agent_task',
+      agentRole: 'ARCHITECT' as AgentRole,
+      taskType: 'designArchitecture',
+      maxRetries: 3,
+      timeout: 300000,
+      metadata: {
+        promptTemplate: 'Design the domain model, class and sequence diagrams, choose design patterns and generate the layered code skeleton.',
+        description: 'Architect designs the system and generates the code skeleton (OOAD design)',
+      },
+    },
+    {
+      id: 'ooad_gate',
+      type: 'quality_gate',
+      metadata: {
+        description: 'OOAD quality gate (QA): use cases, domain model, patterns and diagrams must be complete before implementation',
+        criteria: {
+          minUseCases: 5,
+          minEntities: 3,
+          minPatterns: 3,
+          requiredArtifacts: ['use-cases.md', 'use-case-diagram.puml', 'domain-model.puml', 'class-diagram.puml', 'architecture-patterns.md'],
+        },
+      },
+    },
+    {
       id: 'breakdown',
       type: 'agent_task',
       agentRole: 'PM' as AgentRole,
@@ -27,8 +70,8 @@ export const DEFAULT_WORKFLOW_DEFINITION: WorkflowDefinition = {
       maxRetries: 3,
       timeout: 180000,
       metadata: {
-        promptTemplate: 'Break down the milestones into actionable tasks. Estimate effort for each task and assign to appropriate team members.',
-        description: 'PM breaks down milestones into tasks',
+        promptTemplate: 'Turn the approved use cases into one developer task per use case, ordered by priority.',
+        description: 'PM plans one task per approved use case',
       },
     },
     {
@@ -44,6 +87,18 @@ export const DEFAULT_WORKFLOW_DEFINITION: WorkflowDefinition = {
       },
     },
     {
+      id: 'test',
+      type: 'agent_task',
+      agentRole: 'QC' as AgentRole,
+      taskType: 'verify',
+      maxRetries: 3,
+      timeout: 300000,
+      metadata: {
+        promptTemplate: 'Write acceptance tests for every use case and build the traceability matrix (use case -> classes -> code -> tests).',
+        description: 'QC verifies the implementation against the use cases',
+      },
+    },
+    {
       id: 'review',
       type: 'agent_task',
       agentRole: 'QA' as AgentRole,
@@ -51,8 +106,8 @@ export const DEFAULT_WORKFLOW_DEFINITION: WorkflowDefinition = {
       maxRetries: 3,
       timeout: 180000,
       metadata: {
-        promptTemplate: 'Review the implementation. Run tests, check for bugs, verify requirements are met. Provide detailed feedback.',
-        description: 'QA reviews the implementation',
+        promptTemplate: 'Review the implementation against the approved OOAD design and the QC report. Approve or send it back with findings.',
+        description: 'QA reviews design conformance and approves',
       },
     },
     {
@@ -100,13 +155,70 @@ export const DEFAULT_WORKFLOW_DEFINITION: WorkflowDefinition = {
     },
   ],
   edges: [
-    { from: 'start', to: 'breakdown' },
+    { from: 'start', to: 'analyze' },
+    { from: 'analyze', to: 'design' },
+    { from: 'design', to: 'ooad_gate' },
+    { from: 'ooad_gate', to: 'breakdown', condition: 'onSuccess' },
+    { from: 'ooad_gate', to: 'design', condition: 'onFail' },
     { from: 'breakdown', to: 'develop' },
-    { from: 'develop', to: 'review' },
+    { from: 'develop', to: 'test' },
+    { from: 'test', to: 'review' },
     { from: 'review', to: 'qa_condition' },
     { from: 'qa_condition', to: 'develop', condition: 'onFail' },
     { from: 'qa_condition', to: 'market', condition: 'onSuccess' },
     { from: 'market', to: 'approval' },
     { from: 'approval', to: 'end', condition: 'onApprove' },
+  ],
+};
+
+/** Nodes of the default workflow that the collaborative variant replaces */
+const SEQUENTIAL_BUILD_NODES = new Set(['develop', 'test', 'review', 'qa_condition']);
+
+/**
+ * Collaborative variant (Task 15), selected with WORKFLOW_COLLABORATION=pair:
+ * ... → PM → pair_develop (DEV + Architect navigator, BA clarifications) → review_chain (QC → QA)
+ * → Marketing → approval → CEO. A rejected review sends the pair back to work.
+ */
+export const PAIR_WORKFLOW_DEFINITION: WorkflowDefinition = {
+  id: 'pair-project-workflow',
+  name: 'Collaborative Project Workflow',
+  version: '2.1.0',
+  startNode: 'start',
+  endNode: 'end',
+  nodes: [
+    ...DEFAULT_WORKFLOW_DEFINITION.nodes.filter(n => !SEQUENTIAL_BUILD_NODES.has(n.id)),
+    {
+      id: 'pair_develop',
+      type: 'agent_collaboration',
+      maxRetries: 2,
+      timeout: 1800000,
+      metadata: {
+        pattern: 'pair_develop',
+        navigator: 'ARCHITECT',
+        maxRounds: 2,
+        description: 'DEV implements with the Architect as navigator (plan review, code review) and asks BA about unclear use cases',
+      },
+    },
+    {
+      id: 'review_chain',
+      type: 'agent_collaboration',
+      maxRetries: 2,
+      timeout: 900000,
+      metadata: {
+        pattern: 'review_chain',
+        reviewers: [
+          { role: 'QC', taskType: 'verify', verdictField: 'qc_passed', decides: false },
+          { role: 'QA', taskType: 'review', verdictField: 'qa_approved', decides: true },
+        ],
+        description: 'QC (executed acceptance tests) then QA (design conformance) review the implementation',
+      },
+    },
+  ],
+  edges: [
+    ...DEFAULT_WORKFLOW_DEFINITION.edges.filter(e => !SEQUENTIAL_BUILD_NODES.has(e.from) && !SEQUENTIAL_BUILD_NODES.has(e.to)),
+    { from: 'breakdown', to: 'pair_develop' },
+    { from: 'pair_develop', to: 'review_chain' },
+    { from: 'review_chain', to: 'market', condition: 'onSuccess' },
+    { from: 'review_chain', to: 'pair_develop', condition: 'onFail' },
   ],
 };

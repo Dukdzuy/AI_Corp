@@ -1,0 +1,23 @@
+{
+  "projectId": "4bd3384a-a2e3-4826-a0cd-1f2d0fb4c833",
+  "projectName": "Online Bookstore",
+  "useCaseCount": 5,
+  "entityCount": 3,
+  "patternCount": 3,
+  "gatePassRate": 100,
+  "lastGateScore": 100,
+  "testCoverage": 80,
+  "traceability": {
+    "executed": true,
+    "passingCount": 4,
+    "failingCount": 0,
+    "totalCount": 5,
+    "missingUseCases": [
+      "UC-005"
+    ],
+    "failingUseCases": [],
+    "testsPassed": 4,
+    "testsFailed": 0,
+    "generatedAt": "2026-11-03T02:29:22.267Z"
+  }
+}

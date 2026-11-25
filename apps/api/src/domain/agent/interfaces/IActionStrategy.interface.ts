@@ -33,7 +33,7 @@ import { AgentContext, AgentThought, AgentActionResult } from '../../common/type
  * - Handle errors and retries
  * - Return execution results
  */
-export interface IActionStrategy {
+export interface IActionStrategy<TOutput = unknown> {
   /**
    * Execute actions based on thought
    * 
@@ -59,6 +59,12 @@ export interface IActionStrategy {
    * // result.success: true
    * // result.output: { filesWritten: ['src/index.ts'], code: '...' }
    * ```
+   * 
+   * TODO (Academic Enhancement): Input validation missing
+   * - Add validation for context and thought parameters
+   * - Validate thought.plannedActions is not empty
+   * - Consider Result<T,E> pattern for explicit error handling
+   * - Example: `Result<AgentActionResult, ExecutionError>` instead of throwing
    */
-  act(context: AgentContext, thought: AgentThought): Promise<AgentActionResult>;
+  act(context: AgentContext, thought: AgentThought): Promise<AgentActionResult<TOutput>>;
 }

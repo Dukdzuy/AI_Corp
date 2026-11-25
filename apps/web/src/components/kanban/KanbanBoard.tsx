@@ -1,16 +1,17 @@
 import React, { useState, useCallback } from 'react';
-import { Typography, Tag, Space } from 'antd';
+import { Alert, App, Badge, Card, Empty, Flex, Typography, theme } from 'antd';
 import { Task, TaskStatus } from '@ai-corp/shared-types';
 import { useUpdateTask } from '../../lib/api/hooks/tasks';
 import { TaskCard } from './TaskCard';
+import { apiErrorMessage } from '../../lib/api/errors';
 
 const { Text } = Typography;
 
-const COLUMNS: { key: TaskStatus; title: string; color: string }[] = [
-  { key: TaskStatus.TODO, title: 'Todo', color: '#8b949e' },
-  { key: TaskStatus.IN_PROGRESS, title: 'In Progress', color: '#1677ff' },
-  { key: TaskStatus.REVIEW, title: 'Review', color: '#fa8c16' },
-  { key: TaskStatus.DONE, title: 'Done', color: '#52c41a' },
+const COLUMNS: { key: TaskStatus; title: string; status: 'default' | 'processing' | 'warning' | 'success' }[] = [
+  { key: TaskStatus.TODO, title: 'Todo', status: 'default' },
+  { key: TaskStatus.IN_PROGRESS, title: 'In Progress', status: 'processing' },
+  { key: TaskStatus.REVIEW, title: 'Review', status: 'warning' },
+  { key: TaskStatus.DONE, title: 'Done', status: 'success' },
 ];
 
 const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
@@ -23,12 +24,16 @@ const VALID_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
 interface KanbanBoardProps {
   tasks: Task[];
   onTaskClick?: (task: Task) => void;
+  /** Why tasks can't be moved by hand right now (e.g. the agents are working on them) */
+  lockedReason?: string;
 }
 
-export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, onTaskClick }) => {
+export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, onTaskClick, lockedReason }) => {
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<TaskStatus | null>(null);
   const updateTask = useUpdateTask();
+  const { message } = App.useApp();
+  const { token } = theme.useToken();
 
   const handleDragStart = useCallback((taskId: string) => {
     setDraggedTaskId(taskId);
@@ -62,8 +67,16 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, onTaskClick }) 
         return;
       }
 
+      if (lockedReason) {
+        message.warning(lockedReason);
+        setDraggedTaskId(null);
+        setDropTarget(null);
+        return;
+      }
+
       const allowed = VALID_TRANSITIONS[task.status];
       if (!allowed.includes(targetStatus)) {
+        message.info(`A task can't move from ${task.status} to ${targetStatus}`);
         setDraggedTaskId(null);
         setDropTarget(null);
         return;
@@ -71,99 +84,59 @@ export const KanbanBoard: React.FC<KanbanBoardProps> = ({ tasks, onTaskClick }) 
 
       try {
         await updateTask.mutateAsync({ id: taskId, status: targetStatus });
-      } catch {
-        // Error handled by mutation
+      } catch (error) {
+        message.error(apiErrorMessage(error, 'Could not move the task'));
       }
 
       setDraggedTaskId(null);
       setDropTarget(null);
     },
-    [tasks, updateTask]
+    [tasks, updateTask, lockedReason, message]
   );
 
   return (
-    <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 16 }}>
-      {COLUMNS.map((col) => {
-        const columnTasks = tasks.filter((t) => t.status === col.key);
-        const isDropTarget = dropTarget === col.key;
+    <>
+      {lockedReason && <Alert type="info" showIcon title={lockedReason} style={{ marginBottom: token.marginSM }} />}
+      <Flex gap={token.marginSM} style={{ overflowX: 'auto', paddingBottom: token.padding }}>
+        {COLUMNS.map((col) => {
+          const columnTasks = tasks.filter((t) => t.status === col.key);
+          const isDropTarget = dropTarget === col.key;
 
-        return (
-          <div
-            key={col.key}
-            onDragOver={(e) => handleDragOver(e, col.key)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, col.key)}
-            style={{
-              flex: '1 1 0',
-              minWidth: 260,
-              maxWidth: 340,
-              background: isDropTarget ? '#1c2128' : '#161b22',
-              border: isDropTarget ? '2px dashed #1677ff' : '1px solid #30363d',
-              borderRadius: 10,
-              padding: 12,
-              transition: 'all 0.15s ease',
-            }}
-          >
-            {/* Column Header */}
-            <Space style={{ marginBottom: 12, width: '100%', justifyContent: 'space-between' }}>
-              <Space size={6}>
-                <div
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: col.color,
-                  }}
-                />
-                <Text style={{ color: '#e6edf3', fontSize: 13, fontWeight: 600 }}>
-                  {col.title}
-                </Text>
-              </Space>
-              <Tag
-                style={{
-                  background: '#21262d',
-                  border: 'none',
-                  color: '#8b949e',
-                  fontSize: 11,
-                  margin: 0,
-                }}
-              >
-                {columnTasks.length}
-              </Tag>
-            </Space>
-
-            {/* Task List */}
-            {columnTasks.length === 0 ? (
-              <div
-                style={{
-                  padding: '24px 0',
-                  textAlign: 'center',
-                }}
-              >
-                <Text style={{ color: '#484f58', fontSize: 12 }}>
-                  {isDropTarget ? 'Drop here' : 'No tasks'}
-                </Text>
-              </div>
-            ) : (
-              columnTasks.map((task) => (
-                <div
-                  key={task.id}
-                  onDragEnd={handleDragEnd}
-                  style={{
-                    opacity: draggedTaskId === task.id ? 0.4 : 1,
-                  }}
-                >
-                  <TaskCard
-                    task={task}
-                    onDragStart={handleDragStart}
-                    onClick={onTaskClick}
-                  />
-                </div>
-              ))
-            )}
-          </div>
-        );
-      })}
-    </div>
+          return (
+            <Card
+              key={col.key}
+              size="small"
+              onDragOver={(e) => handleDragOver(e, col.key)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, col.key)}
+              title={<Badge status={col.status} text={<Text strong>{col.title}</Text>} />}
+              extra={<Badge count={columnTasks.length} showZero color={token.colorFillSecondary} style={{ color: token.colorTextSecondary }} />}
+              style={{
+                flex: '1 1 0',
+                minWidth: 260,
+                maxWidth: 340,
+                background: isDropTarget ? token.colorPrimaryBg : token.colorFillQuaternary,
+                borderColor: isDropTarget ? token.colorPrimary : undefined,
+                borderStyle: isDropTarget ? 'dashed' : undefined,
+                transition: 'all 0.15s ease',
+              }}
+              styles={{ body: { padding: token.paddingXS } }}
+            >
+              {columnTasks.length === 0 ? (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={isDropTarget ? 'Drop here' : 'No tasks'} style={{ margin: `${token.marginLG}px 0` }} />
+              ) : (
+                <Flex vertical gap={token.marginXS}>
+                  {columnTasks.map((task) => (
+                    <div key={task.id} onDragEnd={handleDragEnd} style={{ opacity: draggedTaskId === task.id ? 0.4 : 1 }}>
+                      <TaskCard task={task} onDragStart={handleDragStart} onClick={onTaskClick} />
+                    </div>
+                  ))}
+                </Flex>
+              )}
+            </Card>
+          );
+        })}
+      </Flex>
+    </>
   );
 };

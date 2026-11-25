@@ -1,0 +1,69 @@
+@startuml SD-006: Workflow Snapshot & Rollback (Memento)
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title SD-006: Workflow Snapshot & Rollback (Memento, Task 17)
+caption Engine = originator, WorkflowSnapshotCaretaker = caretaker, WorkflowRunMemento = memento
+
+actor "Board Member" as User #LightBlue
+participant "WorkflowsController" as Ctrl #LightCyan
+participant "WorkflowEngine" as Engine #Orange
+participant "WorkflowSnapshotCaretaker" as Caretaker #LightGreen
+participant "WorkflowRunMemento" as Memento #LightYellow
+participant "IWorkflowEngineRepository" as Repo #LightGray
+participant "NodeExecutionStrategy" as Strategy #Pink
+
+== Normal execution: one memento before every node ==
+
+loop each node of a top-level run
+  Engine -> Caretaker: capture(run)
+  activate Caretaker
+  Caretaker -> Memento: capture(run, sequence)
+  note right of Memento: deep copy of\ncurrentNodeId, status, context
+  Caretaker -> Repo: createSnapshot(memento)
+  deactivate Caretaker
+  Engine -> Strategy: execute(node, run, ctx)
+  alt node fails after its retries and has no onFail edge
+    Strategy --> Engine: failure
+    Engine -> Repo: updateRun(status = 'failed')
+  else success
+    Strategy --> Engine: NodeResult
+    Engine -> Engine: WorkflowGraph.next(node, edgeCondition)
+  end
+end
+
+== Rollback (run is paused or failed) ==
+
+User -> Ctrl: POST /api/workflows/runs/:id/rollback { snapshotId | steps }
+Ctrl -> Engine: rollbackWorkflow(runId, target)
+activate Engine
+Engine -> Repo: findRunById(runId)
+note right of Engine: refuses running/completed runs\nand sub-workflow runs
+Engine -> Caretaker: select(runId, target)
+Caretaker -> Repo: findSnapshots(runId)
+Caretaker --> Engine: WorkflowRunMemento
+Engine -> Memento: context()
+Engine -> Repo: updateRun(status = 'paused',\ncurrentNodeId = memento.nodeId,\ncontext = memento.context(), completedAt = null)
+Engine -> Caretaker: discardFrom(runId, memento.sequence)
+Caretaker -> Repo: deleteSnapshotsAfter(runId, sequence - 1)
+Engine -> Repo: cancelPendingApprovals(runId)
+Engine --> Ctrl: { run, snapshot, cancelledApprovals }
+deactivate Engine
+Ctrl --> User: 200 "Rolled back to snapshot #n; the run is paused at node X"
+
+== Resume ==
+
+User -> Ctrl: POST /api/workflows/runs/:id/resume
+Ctrl -> Engine: resumeWorkflow(runId)
+Engine -> Engine: processCurrentNode(runId)
+note over Engine: the restored node runs again\n(and is snapshotted again under the same sequence)
+
+note over User, Strategy
+  Rules
+  - Snapshots are stored in WorkflowSnapshot, so they survive restarts.
+  - The run keeps the definition version it started with (workflowDefVersion).
+  - Files in the project workspace are not part of the memento: re-run agents rewrite them.
+  - Sub-workflow runs are not snapshotted; rolling back the parent re-runs the whole sub_workflow node.
+end note
+@enduml

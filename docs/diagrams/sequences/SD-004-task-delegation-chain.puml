@@ -1,0 +1,134 @@
+@startuml SD-004: Task Delegation Chain
+!theme plain
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title SD-004: Task Delegation Chain (default OOAD workflow v2.0.0)
+caption Each agent hands its output to the next through workflow variables
+
+actor "Board Member" as User #LightBlue
+participant "WorkflowEngine" as Engine #Orange
+participant "AgentOrchestrator\n(IAgent[] from AGENTS)" as Orch #Orange
+participant "CEO" as CEO #Pink
+participant "BA" as BA #LightGreen
+participant "Architect" as Architect #LightGreen
+participant "OOAD Gate\n(QualityGateStrategy)" as Gate #Yellow
+participant "PM" as PM #Pink
+participant "DEV" as DEV #LightGreen
+participant "QC" as QC #LightGreen
+participant "QA" as QA #LightGreen
+participant "Marketing" as MKT #LightGreen
+database "ProjectWorkspace\nprojects/<id>/" as WS #LightGray
+database "PrismaDB" as DB #LightGray
+
+note over Engine, Orch
+  **Hand-off mechanism**: every agent_task node calls
+  orchestrator.invokeAgent(role, context). The strategy's typed output
+  (BaOutput, QcOutput, ...) is merged into the run's variables, so the next
+  agent and the condition nodes read it (code, qcReport, qa_approved).
+  Agents never call each other directly.
+end note
+
+User -> Engine: startWorkflow(projectId, 'default-project-workflow')
+activate Engine
+Engine -> DB: workflowRun.create({status: 'running', currentNodeId: 'start'})
+
+== Analysis ==
+
+Engine -> Orch: invokeAgent('CEO', {taskType: 'planMilestones', goal})
+Orch -> CEO: execute(context)
+CEO --> Orch: CeoOutput { action: 'planMilestones', output }
+Orch --> Engine: result
+Engine -> DB: milestone.create(...) (one per listed milestone)
+
+Engine -> Orch: invokeAgent('BA', {taskType: 'generateUseCases'})
+Orch -> BA: execute(context)
+BA -> WS: docs/use-cases.md, docs/use-case-diagram.puml
+BA -> DB: project.ooadMetadata.useCases
+BA --> Orch: BaOutput { useCases, actors, filesWritten }
+Orch --> Engine: result
+
+== Design ==
+
+Engine -> Orch: invokeAgent('ARCHITECT', {taskType: 'designArchitecture'})
+Orch -> Architect: execute(context)
+Architect -> DB: read ooadMetadata.useCases
+Architect -> WS: domain-model.puml, class-diagram.puml, sequence-UC-xxx.puml,\narchitecture-patterns.md, ARCHITECTURE.md, src/** skeleton
+Architect -> DB: ooadMetadata.{domainModel, patterns, architecture}
+Architect --> Orch: ArchitectOutput { domainModel, patterns, skeletonFiles }
+Orch --> Engine: result
+
+Engine -> Gate: execute('ooad_gate', criteria)
+Gate -> DB: counts (use cases ≥ 5, entities ≥ 3, patterns ≥ 3)
+Gate -> WS: required artifacts exist?
+alt gate failed
+  Gate --> Engine: onFail
+  Engine -> Architect: back to 'design' (redesign)
+else gate passed
+  Gate --> Engine: onSuccess
+end
+
+== Implementation ==
+
+Engine -> Orch: invokeAgent('PM', {taskType: 'breakdownTasks'})
+Orch -> PM: execute(context)
+PM -> DB: read approved use cases
+PM --> Orch: PmOutput { output: '1. UC-001 ...' }
+Orch --> Engine: result
+Engine -> DB: task.create(...) (one per use case, status todo)
+
+Engine -> Orch: invokeAgent('DEV', {taskType: 'implement'})
+Orch -> DEV: execute(context + OOAD design)
+DEV -> WS: src/** (paths normalised, traversal rejected)
+DEV --> Orch: DevOutput { code, filesWritten }
+Orch --> Engine: result
+Engine -> DB: tasks todo/in_progress → review
+
+== Verification ==
+
+Engine -> Orch: invokeAgent('QC', {taskType: 'verify'})
+Orch -> QC: execute(context)
+QC -> WS: tests/UC-xxx.spec.ts
+participant "SandboxExecutor\n(runInWorkspace)" as Sandbox #LightYellow
+QC -> Sandbox: jest --json on projects/<id> (read-only mount, no network)
+Sandbox --> QC: Jest report → JestReportMapper (per UC-xxx)
+QC -> WS: docs/traceability-matrix.md (Passing / Failing / Missing)
+QC -> DB: ooadMetadata.{testCoverage, traceability (pass/fail counts)}
+QC --> Orch: QcOutput { qc_passed, testCoverage, failingTests, qcReport }
+Orch --> Engine: result
+
+Engine -> Orch: invokeAgent('QA', {taskType: 'review', code, qcReport, failingTests})
+Orch -> QA: execute(context)
+QA --> Orch: QaOutput { qa_approved }
+Orch --> Engine: result
+
+alt qa_approved = false
+  Engine -> DB: review tasks → in_progress
+  Engine -> DEV: back to 'develop' (fix findings)
+else qa_approved = true
+  Engine -> DB: review tasks → done
+end
+
+== Release ==
+
+Engine -> Orch: invokeAgent('MARKETING', {taskType: 'draftAnnouncement'})
+Orch -> MKT: execute(context)
+MKT --> Orch: MarketingOutput { output }
+Orch --> Engine: result
+
+Engine -> User: human_approval ('project_completion')
+User --> Engine: approve
+Engine -> Orch: invokeAgent('CEO', {taskType: 'complete_project'})
+Orch -> CEO: execute(context)
+CEO --> Orch: CeoOutput { action: 'complete_project', output: close-out report }
+Engine -> DB: workflowRun.update({status: 'completed'})
+Engine --> User: WorkflowCompleted
+deactivate Engine
+
+note over User, DB
+  **Chain**: CEO → BA → Architect → [OOAD gate] → PM → DEV → QC → QA → [qa_approved] → Marketing → [approval] → CEO
+  Backward edges: gate fail → Architect, QA reject → DEV.
+  QC (product: tests, traceability) and QA (process: design conformance) form a review chain.
+end note
+
+@enduml

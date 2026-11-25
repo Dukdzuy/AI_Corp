@@ -1,188 +1,132 @@
 import React, { useEffect, useRef, useCallback } from 'react';
-import { Typography, Space, Avatar, Empty, Button, Tag } from 'antd';
+import { App, Avatar, Button, Empty, Flex, Space, Tag, Typography, theme } from 'antd';
+import { Bubble, Think } from '@ant-design/x';
 import { RobotOutlined, BulbOutlined, ThunderboltOutlined, MessageOutlined, CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
-import { AgentRole } from '@ai-corp/shared-types';
 import { MeetingMessage } from '../../stores/meetingStore';
-import socketClient from '../../lib/websocket/socket-client';
+import { respondToApproval, approvalErrorMessage } from '../../lib/api/hooks/approvals';
+import { performativeStyle, protocolLabel } from './performatives';
+import { roleColor, roleHex } from '../../theme/palette';
+import { useIsDark } from '../../theme/AppThemeProvider';
 
 const { Text } = Typography;
-
-const ROLE_COLORS: Record<string, string> = {
-  CEO: '#722ed1',
-  PM: '#1677ff',
-  DEV: '#52c41a',
-  QA: '#fa8c16',
-  MARKETING: '#eb2f96',
-};
 
 interface MeetingRoomProps {
   messages: MeetingMessage[];
   connected: boolean;
 }
 
+/**
+ * One Meeting Room message as an Ant Design X `Bubble`: agent chat, `Think` for an agent's
+ * reasoning, `Bubble.System` for notices, and an approval bubble with Approve / Reject.
+ */
 const MessageBubble: React.FC<{ msg: MeetingMessage }> = ({ msg }) => {
-  const roleColor = ROLE_COLORS[msg.fromRole] ?? '#8b949e';
+  const { message } = App.useApp();
+  const { token } = theme.useToken();
+  const dark = useIsDark();
   const timeStr = msg.timestamp.toLocaleTimeString();
-  const isSystem = msg.type === 'notification';
-  const isApproval = msg.type === 'approval';
 
-  const handleApprove = useCallback(() => {
-    if (msg.approvalId) {
-      socketClient.emit('human:approval_response', {
-        approvalId: msg.approvalId,
-        status: 'approved',
-        respondedAt: new Date().toISOString(),
-      });
+  const respond = useCallback(async (decision: 'approve' | 'reject') => {
+    if (!msg.approvalId) return;
+    try {
+      await respondToApproval(msg.approvalId, decision);
+    } catch (error) {
+      message.error(approvalErrorMessage(error));
     }
-  }, [msg.approvalId]);
+  }, [msg.approvalId, message]);
+  const handleApprove = useCallback(() => respond('approve'), [respond]);
+  const handleReject = useCallback(() => respond('reject'), [respond]);
 
-  const handleReject = useCallback(() => {
-    if (msg.approvalId) {
-      socketClient.emit('human:approval_response', {
-        approvalId: msg.approvalId,
-        status: 'rejected',
-        respondedAt: new Date().toISOString(),
-      });
-    }
-  }, [msg.approvalId]);
-
-  if (isSystem) {
-    return (
-      <div style={{ textAlign: 'center', padding: '6px 0' }}>
-        <Text style={{ color: '#484f58', fontSize: 11, fontStyle: 'italic' }}>
-          {msg.message}
-        </Text>
-      </div>
-    );
+  if (msg.type === 'notification') {
+    return <Bubble.System content={msg.message} />;
   }
 
-  if (isApproval) {
+  const meta = (
+    <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>{timeStr}</Text>
+  );
+
+  if (msg.type === 'approval') {
     return (
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          padding: '8px 0',
-          borderBottom: '1px solid #21262d',
-        }}
-      >
-        <Avatar
-          size={28}
-          icon={<ExclamationCircleOutlined />}
-          style={{ background: '#faad14', flexShrink: 0, fontSize: 12 }}
-        />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <Space size={6} align="center">
-            <Text strong style={{ color: '#faad14', fontSize: 12 }}>
-              {msg.fromRole}
-            </Text>
-            <Tag color="warning" style={{ margin: 0, fontSize: 10 }}>
-              APPROVAL
-            </Tag>
-            <Text style={{ color: '#484f58', fontSize: 10 }}>{timeStr}</Text>
+      <Bubble
+        placement="start"
+        variant="outlined"
+        avatar={<Avatar icon={<ExclamationCircleOutlined />} style={{ background: token.colorWarning }} />}
+        header={
+          <Space size={6}>
+            <Text strong>{msg.fromRole}</Text>
+            <Tag color="warning" style={{ margin: 0 }}>APPROVAL</Tag>
+            {meta}
           </Space>
-          <div
-            style={{
-              background: '#faad1408',
-              border: '1px solid #faad1430',
-              borderRadius: 6,
-              padding: '8px 10px',
-              marginTop: 4,
-            }}
-          >
-            <Text style={{ color: '#d4a816', fontSize: 12, display: 'block', marginBottom: 6 }}>
-              {msg.message}
-            </Text>
+        }
+        styles={{ content: { borderColor: token.colorWarningBorder, background: token.colorWarningBg } }}
+        content={msg.message}
+        contentRender={content => (
+          <Flex vertical gap={token.marginXS}>
+            <Text>{content}</Text>
             {msg.requestData && (
-              <Text style={{ color: '#8b949e', fontSize: 11, display: 'block', marginBottom: 8, fontFamily: 'monospace' }}>
+              <Text type="secondary" code style={{ fontSize: token.fontSizeSM }} ellipsis>
                 {JSON.stringify(msg.requestData).slice(0, 120)}
               </Text>
             )}
-            <Space size={8}>
-              <Button
-                size="small"
-                type="primary"
-                icon={<CheckCircleOutlined />}
-                onClick={handleApprove}
-                style={{ background: '#52c41a', borderColor: '#52c41a', fontSize: 11 }}
-              >
+            <Space size={token.marginXS}>
+              <Button size="small" color="green" variant="solid" icon={<CheckCircleOutlined />} onClick={handleApprove}>
                 Approve
               </Button>
-              <Button
-                size="small"
-                danger
-                icon={<CloseCircleOutlined />}
-                onClick={handleReject}
-                style={{ fontSize: 11 }}
-              >
+              <Button size="small" danger icon={<CloseCircleOutlined />} onClick={handleReject}>
                 Reject
               </Button>
             </Space>
-          </div>
-        </div>
-      </div>
+          </Flex>
+        )}
+      />
     );
   }
 
-  const typeIcon = {
-    thinking: <BulbOutlined style={{ color: '#faad14', fontSize: 11 }} />,
-    action: <ThunderboltOutlined style={{ color: '#1677ff', fontSize: 11 }} />,
-    chat: <MessageOutlined style={{ color: '#8b949e', fontSize: 11 }} />,
-    notification: null,
-    approval: null,
-  }[msg.type];
+  const performative = performativeStyle(msg.performative);
+  const protocol = protocolLabel(msg.protocol);
+  const typeIcon = msg.type === 'action'
+    ? <ThunderboltOutlined style={{ color: token.colorPrimary }} />
+    : msg.type === 'chat' ? <MessageOutlined style={{ color: token.colorTextTertiary }} /> : null;
+
+  const header = (
+    <Space size={6} wrap>
+      <Tag color={roleColor(msg.fromRole)} style={{ margin: 0 }}>{msg.fromRole}</Tag>
+      {typeIcon}
+      {performative && (
+        <Tag color={performative.color} variant="outlined" style={{ margin: 0 }} title={msg.performative}>
+          {msg.performative}
+        </Tag>
+      )}
+      <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>
+        → {msg.toRole === 'all' ? 'everyone' : msg.toRole}
+        {protocol ? ` · ${protocol}` : ''}
+      </Text>
+      {meta}
+    </Space>
+  );
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        gap: 8,
-        padding: '8px 0',
-        borderBottom: '1px solid #21262d',
-      }}
-    >
-      <Avatar
-        size={28}
-        icon={<RobotOutlined />}
-        style={{ background: roleColor, flexShrink: 0, fontSize: 12 }}
-      />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <Space size={6} align="center">
-          <Text strong style={{ color: roleColor, fontSize: 12 }}>
-            {msg.fromRole}
-          </Text>
-          {typeIcon}
-          <Text style={{ color: '#484f58', fontSize: 10 }}>
-            → {msg.toRole === 'all' ? 'everyone' : msg.toRole}
-          </Text>
-          <Text style={{ color: '#484f58', fontSize: 10 }}>{timeStr}</Text>
-        </Space>
-        <div
-          style={{
-            background: msg.type === 'thinking' ? '#faad1408' : '#0d1117',
-            border: '1px solid #21262d',
-            borderRadius: 6,
-            padding: '6px 10px',
-            marginTop: 4,
-          }}
-        >
-          <Text
-            style={{
-              color: msg.type === 'thinking' ? '#d4a816' : '#c9d1d9',
-              fontSize: 12,
-              fontStyle: msg.type === 'thinking' ? 'italic' : 'normal',
-            }}
-          >
-            {msg.message}
-          </Text>
-        </div>
-      </div>
-    </div>
+    <Bubble
+      placement="start"
+      variant={msg.type === 'action' ? 'outlined' : 'filled'}
+      avatar={<Avatar icon={<RobotOutlined />} style={{ background: roleHex(msg.fromRole, dark) }} />}
+      header={header}
+      content={msg.message}
+      contentRender={content =>
+        msg.type === 'thinking' ? (
+          <Think title="Thinking" icon={<BulbOutlined />} defaultExpanded>
+            <Text italic type="secondary" style={{ whiteSpace: 'pre-wrap' }}>{content}</Text>
+          </Think>
+        ) : (
+          <Text style={{ whiteSpace: 'pre-wrap' }}>{content}</Text>
+        )
+      }
+    />
   );
 };
 
 export const MeetingRoom: React.FC<MeetingRoomProps> = ({ messages, connected }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { token } = theme.useToken();
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -191,38 +135,18 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({ messages, connected })
   }, [messages.length]);
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-      }}
-    >
-      {/* Message List */}
-      <div
-        ref={scrollRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '4px 0',
-        }}
-      >
-        {messages.length === 0 ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={
-              <Text style={{ color: '#8b949e' }}>
-                {connected
-                  ? 'Waiting for agent conversations...'
-                  : 'Connect to see agent messages.'}
-              </Text>
-            }
-            style={{ padding: '32px 0' }}
-          />
-        ) : (
-          messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)
-        )}
-      </div>
+    <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', paddingInlineEnd: token.paddingXS }}>
+      {messages.length === 0 ? (
+        <Empty
+          image={Empty.PRESENTED_IMAGE_SIMPLE}
+          description={connected ? 'Waiting for agent conversations...' : 'Connect to see agent messages.'}
+          style={{ padding: '32px 0' }}
+        />
+      ) : (
+        <Flex vertical gap={token.margin}>
+          {messages.map((msg) => <MessageBubble key={msg.id} msg={msg} />)}
+        </Flex>
+      )}
     </div>
   );
 };

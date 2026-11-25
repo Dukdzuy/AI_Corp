@@ -1,45 +1,54 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Select, Button, Typography, Space, Tag, message, Skeleton } from 'antd';
-import { RobotOutlined, SaveOutlined, ReloadOutlined } from '@ant-design/icons';
+import { App, Avatar, Button, Card, Flex, Select, Skeleton, Space, Table, Tag, Tooltip, Typography, theme } from 'antd';
+import { Permission } from '@ai-corp/shared-types';
+import { usePermission } from '../lib/permissions';
+import { CloudServerOutlined, RobotOutlined, SaveOutlined, ReloadOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../lib/api/client';
+import { PageHeader } from '../components/common/PageHeader';
+import { roleHex } from '../theme/palette';
+import { useIsDark } from '../theme/AppThemeProvider';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface AgentModel {
   role: string;
   name: string;
-  modelRouteConfig: { provider: string; model: string; fallbackProvider: string };
+  modelRouteConfig: { provider: string; model: string; providerId?: string; fallbackProvider: string };
   isActive: boolean;
 }
 
+/** A model of a provider configured on the LLM Providers page (providerId null = NINE_ROUTER_URL gateway) */
 interface AvailableModel {
+  key: string;
   id: string;
   name: string;
+  providerId: string | null;
   provider: string;
   category: string;
 }
 
-const ROLE_COLORS: Record<string, string> = {
-  CEO: '#722ed1',
-  PM: '#1677ff',
-  DEV: '#52c41a',
-  QA: '#fa8c16',
-  MARKETING: '#eb2f96',
-};
+const optionKey = (config?: AgentModel['modelRouteConfig']) =>
+  config?.providerId ? `${config.providerId}::${config.model}` : config?.model;
 
-const PROVIDER_COLORS: Record<string, string> = {
-  openrouter: '#1677ff',
-  cx: '#722ed1',
-  deepseek: '#52c41a',
-  groq: '#fa8c16',
+const CATEGORY_COLORS: Record<string, string> = {
+  general: 'blue',
+  code: 'green',
+  reasoning: 'purple',
+  premium: 'gold',
 };
 
 export const AgentSettings: React.FC = () => {
+  const canConfigure = usePermission(Permission.AGENT_CONFIGURE);
+  const navigate = useNavigate();
   const [agents, setAgents] = useState<AgentModel[]>([]);
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const { message } = App.useApp();
+  const { token } = theme.useToken();
+  const dark = useIsDark();
 
   const fetchData = async () => {
     setLoading(true);
@@ -67,12 +76,12 @@ export const AgentSettings: React.FC = () => {
   };
 
   const handleSave = async (role: string) => {
-    const model = pendingChanges[role];
-    if (!model) return;
+    const option = availableModels.find((m) => m.key === pendingChanges[role]);
+    if (!option) return;
 
     setSaving(true);
     try {
-      await apiClient.patch(`/models/${role}`, { model });
+      await apiClient.patch(`/models/${role}`, { model: option.id, ...(option.providerId && { providerId: option.providerId }) });
       message.success(`${role} agent model updated`);
       setPendingChanges((prev) => {
         const next = { ...prev };
@@ -87,20 +96,37 @@ export const AgentSettings: React.FC = () => {
     }
   };
 
+  const groupedModels = Object.entries(
+    availableModels.reduce<Record<string, AvailableModel[]>>((groups, model) => {
+      (groups[model.provider] ??= []).push(model);
+      return groups;
+    }, {})
+  );
+
+  const modelOptions = groupedModels.map(([provider, models]) => ({
+    label: provider,
+    title: provider,
+    options: models.map(model => ({
+      value: model.key,
+      label: `${model.name} ${model.id} ${provider}`,
+      model,
+    })),
+  }));
+
   const columns = [
     {
       title: 'Agent',
       dataIndex: 'role',
       key: 'role',
+      width: 260,
       render: (role: string, record: AgentModel) => (
-        <Space>
-          <RobotOutlined style={{ color: ROLE_COLORS[role] || '#8b949e' }} />
+        <Flex gap={token.marginSM} align="center">
+          <Avatar icon={<RobotOutlined />} style={{ background: roleHex(role, dark) }} />
           <div>
-            <Text strong style={{ color: ROLE_COLORS[role] }}>{role}</Text>
-            <br />
-            <Text style={{ color: '#8b949e', fontSize: 12 }}>{record.name}</Text>
+            <a onClick={() => navigate(`/agents/${role.toLowerCase()}`)}><Text strong>{role}</Text></a>
+            <Text type="secondary" style={{ fontSize: token.fontSizeSM, display: 'block' }}>{record.name}</Text>
           </div>
-        </Space>
+        </Flex>
       ),
     },
     {
@@ -108,14 +134,14 @@ export const AgentSettings: React.FC = () => {
       key: 'currentModel',
       render: (_: any, record: AgentModel) => {
         const modelId = record.modelRouteConfig?.model || 'N/A';
-        const model = availableModels.find((m) => m.id === modelId);
+        const model = availableModels.find((m) => m.key === optionKey(record.modelRouteConfig));
         return (
-          <Space direction="vertical" size={2}>
-            <Text style={{ color: '#e6edf3' }}>{model?.name || modelId}</Text>
-            <Tag color={PROVIDER_COLORS[record.modelRouteConfig?.provider] || 'default'} style={{ fontSize: 11 }}>
-              {record.modelRouteConfig?.provider || 'unknown'}
+          <Flex vertical gap={2} align="start">
+            <Text>{model?.name || modelId}</Text>
+            <Tag color="geekblue" variant="outlined">
+              {model?.provider || record.modelRouteConfig?.provider || 'unknown'}
             </Tag>
-          </Space>
+          </Flex>
         );
       },
     },
@@ -123,72 +149,72 @@ export const AgentSettings: React.FC = () => {
       title: 'Switch Model',
       key: 'switchModel',
       render: (_: any, record: AgentModel) => {
-        const currentValue = pendingChanges[record.role] || record.modelRouteConfig?.model;
+        const currentValue = pendingChanges[record.role] || optionKey(record.modelRouteConfig);
         const hasChanged = !!pendingChanges[record.role];
 
         return (
-          <Space>
+          <Space.Compact>
             <Select
-              style={{ width: 280 }}
+              style={{ width: 320 }}
+              disabled={!canConfigure}
               value={currentValue}
               onChange={(val) => handleModelChange(record.role, val)}
               placeholder="Select a model"
-              showSearch
-              optionFilterProp="label"
-            >
-              {availableModels.map((model) => (
-                <Select.Option key={model.id} value={model.id} label={model.name}>
-                  <Space>
-                    <Text>{model.name}</Text>
-                    <Tag color={PROVIDER_COLORS[model.provider] || 'default'} style={{ fontSize: 10 }}>
-                      {model.category}
-                    </Tag>
-                  </Space>
-                </Select.Option>
-              ))}
-            </Select>
+              showSearch={{ optionFilterProp: 'label' }}
+              options={modelOptions}
+              optionRender={option => {
+                const model = (option.data as any).model as AvailableModel | undefined;
+                if (!model) return option.label;
+                return (
+                  <Flex justify="space-between" align="center" gap={8}>
+                    <Text ellipsis>{model.name}</Text>
+                    <Tag color={CATEGORY_COLORS[model.category] || 'default'} style={{ margin: 0 }}>{model.category}</Tag>
+                  </Flex>
+                );
+              }}
+              labelRender={({ value }) => {
+                const model = availableModels.find(m => m.key === value);
+                return model ? model.name : String(value ?? '');
+              }}
+            />
             {hasChanged && (
-              <Button
-                type="primary"
-                icon={<SaveOutlined />}
-                size="small"
-                loading={saving}
-                onClick={() => handleSave(record.role)}
-              >
-                Save
-              </Button>
+              <Tooltip title="Save the new model">
+                <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => handleSave(record.role)}>
+                  Save
+                </Button>
+              </Tooltip>
             )}
-          </Space>
+          </Space.Compact>
         );
       },
     },
   ];
 
-  if (loading) {
-    return <Skeleton active paragraph={{ rows: 4 }} />;
-  }
-
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-        <div>
-          <Title level={4} style={{ margin: 0 }}>Agent Models</Title>
-          <Text style={{ color: '#8b949e' }}>
-            Configure which LLM model each agent uses. Changes take effect on the next workflow run.
-          </Text>
-        </div>
-        <Button icon={<ReloadOutlined />} onClick={fetchData}>
-          Refresh
-        </Button>
-      </div>
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+      <PageHeader
+        title="Agent Models"
+        subTitle="Configure which LLM model each agent uses. Changes take effect on the next workflow run."
+        extra={
+          <>
+            {canConfigure && (
+              <Button icon={<CloudServerOutlined />} onClick={() => navigate('/providers')}>
+                Manage providers & models
+              </Button>
+            )}
+            <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
-      <Card>
-        <Table
-          dataSource={agents}
-          columns={columns}
-          rowKey="role"
-          pagination={false}
-        />
+      <Card styles={{ body: { padding: 0 } }}>
+        {loading && agents.length === 0 ? (
+          <Skeleton active paragraph={{ rows: 6 }} style={{ padding: token.paddingLG }} />
+        ) : (
+          <Table dataSource={agents} columns={columns} rowKey="role" pagination={false} loading={loading} />
+        )}
       </Card>
     </div>
   );

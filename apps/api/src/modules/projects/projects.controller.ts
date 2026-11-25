@@ -1,36 +1,61 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
-import { ProjectsService, CreateProjectDto, UpdateProjectDto } from './projects.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Req, HttpCode } from '@nestjs/common';
+import { Permission } from '@ai-corp/shared-types';
+import { Principal } from '../../domain/security';
+import { CurrentPrincipal, RequirePermission } from '../access/access.decorators';
+import { AuthorizationService } from '../access/authorization.service';
+import { Audited } from '../audit/audit.decorators';
+import { ProjectApplicationService } from './project-application.service';
+import { CreateProjectDto, UpdateProjectDto } from './projects.dto';
 
 @Controller('projects')
 export class ProjectsController {
-  constructor(private readonly projectsService: ProjectsService) {}
+  constructor(
+    private readonly projectService: ProjectApplicationService,
+    private readonly authorization: AuthorizationService
+  ) {}
 
   @Get()
+  @RequirePermission(Permission.PROJECT_READ)
   async listProjects() {
-    return this.projectsService.listProjects();
+    return this.projectService.listProjects();
   }
 
-  @UseGuards(JwtAuthGuard)
   @Post()
+  @RequirePermission(Permission.PROJECT_CREATE)
+  @Audited({ action: 'project.create', resourceType: 'Project' })
   async createProject(@Body() data: CreateProjectDto, @Req() req: any) {
-    return this.projectsService.createProject({ ...data, createdById: req.user.id });
+    return this.projectService.createProject({ ...data, createdById: req.user.id });
   }
 
   @Get(':id')
+  @RequirePermission(Permission.PROJECT_READ)
   async getProject(@Param('id') id: string) {
-    return this.projectsService.getProjectDetails(id);
+    return this.projectService.getProjectDetails(id);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Patch(':id')
-  async updateProject(@Param('id') id: string, @Body() data: UpdateProjectDto) {
-    return this.projectsService.updateProject(id, data);
+  @RequirePermission(Permission.PROJECT_UPDATE)
+  @Audited({ action: 'project.update', resourceType: 'Project', idParam: 'id' })
+  async updateProject(@Param('id') id: string, @Body() data: UpdateProjectDto, @CurrentPrincipal() principal: Principal, @Req() req: any) {
+    await this.authorization.assertProjectOwner(principal, id, 'update', req);
+    return this.projectService.updateProject(id, data);
   }
 
-  @UseGuards(JwtAuthGuard)
+  /** Start the workflow again when it never started or stopped (failed / cancelled) */
+  @Post(':id/workflow/start')
+  @HttpCode(200)
+  @RequirePermission(Permission.WORKFLOW_CONTROL)
+  @Audited({ action: 'workflow.start', resourceType: 'Project', idParam: 'id' })
+  async startWorkflow(@Param('id') id: string, @CurrentPrincipal() principal: Principal, @Req() req: any) {
+    await this.authorization.assertProjectOwner(principal, id, 'start the workflow of', req);
+    return this.projectService.startProjectWorkflow(id);
+  }
+
   @Delete(':id')
-  async deleteProject(@Param('id') id: string) {
-    return this.projectsService.deleteProject(id);
+  @RequirePermission(Permission.PROJECT_DELETE)
+  @Audited({ action: 'project.delete', resourceType: 'Project', idParam: 'id' })
+  async deleteProject(@Param('id') id: string, @CurrentPrincipal() principal: Principal, @Req() req: any) {
+    await this.authorization.assertProjectOwner(principal, id, 'delete', req);
+    return this.projectService.deleteProject(id);
   }
 }
