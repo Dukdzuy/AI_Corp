@@ -1,5 +1,6 @@
-import React from 'react';
-import { Layout, Menu, Badge, Typography, Space, Button, Avatar, Tag } from 'antd';
+import React, { Suspense } from 'react';
+import { Avatar, Badge, Button, Dropdown, Flex, FloatButton, Grid, Layout, Menu, Segmented, Skeleton, Tag, Tooltip, Typography, theme } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   DashboardOutlined,
   TeamOutlined,
@@ -13,22 +14,30 @@ import {
   UsergroupAddOutlined,
   LineChartOutlined,
   CloudServerOutlined,
+  SunOutlined,
+  MoonOutlined,
+  DesktopOutlined,
+  CompressOutlined,
+  ExpandOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import { Permission } from '@ai-corp/shared-types';
 import { hasPermission, ROLE_LABELS } from '../../lib/permissions';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useWebsocketStore } from '../../stores/websocketStore';
 import { useAuthStore } from '../../stores/authStore';
+import { useThemeStore, type ThemeMode } from '../../theme/themeStore';
 import { ApprovalNotification } from '../approvals/ApprovalNotification';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
 
-const CONNECTION_STATUS_COLOR: Record<string, string> = {
-  connected: '#52c41a',
-  connecting: '#faad14',
-  reconnecting: '#faad14',
-  disconnected: '#ff4d4f',
+const CONNECTION_STATUS: Record<string, 'success' | 'processing' | 'warning' | 'error' | 'default'> = {
+  connected: 'success',
+  connecting: 'processing',
+  reconnecting: 'warning',
+  disconnected: 'error',
 };
 
 export const MainLayout: React.FC = () => {
@@ -36,6 +45,9 @@ export const MainLayout: React.FC = () => {
   const location = useLocation();
   const { status } = useWebsocketStore();
   const { logout, user } = useAuthStore();
+  const { mode, setMode, compact, setCompact, siderCollapsed, setSiderCollapsed } = useThemeStore();
+  const { token } = theme.useToken();
+  const screens = Grid.useBreakpoint();
 
   const handleLogout = () => {
     logout();
@@ -45,159 +57,160 @@ export const MainLayout: React.FC = () => {
   const selectedKey = location.pathname.startsWith('/virtual-office')
     ? '/virtual-office'
     : location.pathname.startsWith('/projects')
-    ? '/projects'
+    ? '/'
     : location.pathname.startsWith('/admin')
     ? '/admin'
     : location.pathname.startsWith('/agents')
     ? '/agents'
     : ['/providers', '/users', '/audit', '/integrations', '/analytics'].find(p => location.pathname.startsWith(p)) ?? '/';
 
-  const menuItems = [
+  type Item = { key: string; icon: React.ReactNode; label: string } | false;
+  const group = (key: string, label: string, children: Item[]) => {
+    const items = children.filter(Boolean) as Array<{ key: string; icon: React.ReactNode; label: string }>;
+    return items.length ? { type: 'group' as const, key, label, children: items } : null;
+  };
+
+  const menuItems: MenuProps['items'] = [
+    group('work', 'Workspace', [
+      { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
+      { key: '/virtual-office', icon: <TeamOutlined />, label: 'Virtual Office' },
+    ]),
+    group('agents', 'Agents', [
+      { key: '/agents', icon: <RobotOutlined />, label: 'Agent Models' },
+      hasPermission(user, Permission.AGENT_CONFIGURE) && { key: '/providers', icon: <CloudServerOutlined />, label: 'LLM Providers' },
+      // Phase 6: agent performance analytics and the estimation model
+      hasPermission(user, Permission.REPORT_VIEW) && { key: '/analytics', icon: <LineChartOutlined />, label: 'Agent Analytics' },
+    ]),
+    group('admin', 'Administration', [
+      { key: '/admin', icon: <SettingOutlined />, label: 'Admin' },
+      // Phase 5: shown only to roles that may use them
+      hasPermission(user, Permission.INTEGRATION_MANAGE) && { key: '/integrations', icon: <KeyOutlined />, label: 'Integrations' },
+      hasPermission(user, Permission.USER_MANAGE) && { key: '/users', icon: <UsergroupAddOutlined />, label: 'Users & Roles' },
+      hasPermission(user, Permission.AUDIT_VIEW) && { key: '/audit', icon: <AuditOutlined />, label: 'Audit Log' },
+    ]),
+  ].filter(Boolean);
+
+  const userMenu: MenuProps['items'] = [
     {
-      key: '/',
-      icon: <DashboardOutlined />,
-      label: 'Dashboard',
-      onClick: () => navigate('/'),
+      key: 'me',
+      type: 'group',
+      label: user ? (
+        <Flex vertical>
+          <Text strong>{user.name}</Text>
+          <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>{user.email}</Text>
+        </Flex>
+      ) : 'Account',
     },
+    { type: 'divider' },
     {
-      key: '/virtual-office',
-      icon: <TeamOutlined />,
-      label: 'Virtual Office',
-      onClick: () => navigate('/virtual-office'),
+      key: 'compact',
+      icon: compact ? <ExpandOutlined /> : <CompressOutlined />,
+      label: compact ? 'Comfortable density' : 'Compact density',
+      onClick: () => setCompact(!compact),
     },
-    {
-      key: '/admin',
-      icon: <SettingOutlined />,
-      label: 'Admin',
-      onClick: () => navigate('/admin'),
-    },
-    {
-      key: '/agents',
-      icon: <RobotOutlined />,
-      label: 'Agent Models',
-      onClick: () => navigate('/agents'),
-    },
-    hasPermission(user, Permission.AGENT_CONFIGURE) && {
-      key: '/providers',
-      icon: <CloudServerOutlined />,
-      label: 'LLM Providers',
-      onClick: () => navigate('/providers'),
-    },
-    // Phase 6: agent performance analytics and the estimation model
-    hasPermission(user, Permission.REPORT_VIEW) && {
-      key: '/analytics',
-      icon: <LineChartOutlined />,
-      label: 'Agent Analytics',
-      onClick: () => navigate('/analytics'),
-    },
-    // Phase 5: shown only to roles that may use them
-    hasPermission(user, Permission.INTEGRATION_MANAGE) && {
-      key: '/integrations',
-      icon: <KeyOutlined />,
-      label: 'Integrations',
-      onClick: () => navigate('/integrations'),
-    },
-    hasPermission(user, Permission.USER_MANAGE) && {
-      key: '/users',
-      icon: <UsergroupAddOutlined />,
-      label: 'Users & Roles',
-      onClick: () => navigate('/users'),
-    },
-    hasPermission(user, Permission.AUDIT_VIEW) && {
-      key: '/audit',
-      icon: <AuditOutlined />,
-      label: 'Audit Log',
-      onClick: () => navigate('/audit'),
-    },
-  ].filter(Boolean) as Array<{ key: string; icon: React.ReactNode; label: string; onClick: () => void }>;
+    { type: 'divider' },
+    { key: 'logout', icon: <LogoutOutlined />, label: 'Sign out', danger: true, onClick: handleLogout },
+  ];
+
+  const collapsed = siderCollapsed || !screens.lg;
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Header
+      <Sider
+        width={232}
+        collapsedWidth={screens.md ? 72 : 0}
+        collapsible
+        collapsed={collapsed}
+        trigger={null}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: '#001529',
-          padding: '0 24px',
+          borderInlineEnd: `1px solid ${token.colorBorderSecondary}`,
           position: 'sticky',
           top: 0,
-          zIndex: 1000,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          height: '100vh',
+          overflow: 'auto',
         }}
       >
-        {/* Logo */}
-        <Space align="center" size={12}>
-          <ApiOutlined style={{ fontSize: 24, color: '#1677ff' }} />
-          <Text
-            strong
-            style={{ fontSize: 18, color: '#fff', letterSpacing: 1 }}
-          >
-            AI Corp
-          </Text>
-        </Space>
-
-        {/* Right side controls */}
-        <Space size={16}>
-          {/* Connection status indicator */}
-          <Space size={6}>
-            <Badge
-              color={CONNECTION_STATUS_COLOR[status] ?? '#d9d9d9'}
-              text={
-                <Text style={{ color: '#ccc', fontSize: 12, textTransform: 'capitalize' }}>
-                  {status}
-                </Text>
-              }
-            />
-          </Space>
-
-          <ApprovalNotification />
-
-          {user && (
-            <Space size={6}>
-              <Text style={{ color: '#ccc', fontSize: 13 }}>{user.name}</Text>
-              <Tag color={ROLE_LABELS[user.role]?.color}>{ROLE_LABELS[user.role]?.label ?? user.role}</Tag>
-            </Space>
+        <Flex
+          align="center"
+          gap={token.marginSM}
+          style={{ height: 56, padding: `0 ${collapsed ? 24 : 20}px`, cursor: 'pointer' }}
+          onClick={() => navigate('/')}
+        >
+          <Avatar shape="square" size={32} icon={<ApiOutlined />} style={{ background: token.colorPrimary, flexShrink: 0 }} />
+          {!collapsed && (
+            <Text strong style={{ fontSize: token.fontSizeLG, whiteSpace: 'nowrap' }}>
+              AI Corp
+            </Text>
           )}
-          <Avatar
-            icon={<UserOutlined />}
-            style={{ background: '#1677ff', cursor: 'pointer' }}
-          />
-          <Button
-            type="text"
-            icon={<LogoutOutlined />}
-            onClick={handleLogout}
-            style={{ color: '#ccc' }}
-          />
-        </Space>
-      </Header>
+        </Flex>
+        <Menu
+          mode="inline"
+          selectedKeys={[selectedKey]}
+          items={menuItems}
+          onClick={({ key }) => navigate(key)}
+          style={{ borderInlineEnd: 0 }}
+        />
+      </Sider>
 
       <Layout>
-        <Sider
-          width={220}
+        <Header
           style={{
-            background: '#001529',
-            borderRight: '1px solid rgba(255,255,255,0.05)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+            borderBottom: `1px solid ${token.colorBorderSecondary}`,
           }}
         >
-          <Menu
-            theme="dark"
-            mode="inline"
-            selectedKeys={[selectedKey]}
-            items={menuItems}
-            style={{ borderRight: 0, paddingTop: 12 }}
+          <Button
+            type="text"
+            aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
+            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setSiderCollapsed(!siderCollapsed)}
           />
-        </Sider>
 
-        <Content
-          style={{
-            padding: 24,
-            background: '#0d1117',
-            minHeight: 'calc(100vh - 64px)',
-            overflow: 'auto',
-          }}
-        >
-          <Outlet />
+          <Flex align="center" gap={token.marginSM}>
+            <Tooltip title={`Live updates: ${status}`}>
+              <Badge status={CONNECTION_STATUS[status] ?? 'default'} text={screens.md ? <Text type="secondary" style={{ textTransform: 'capitalize' }}>{status}</Text> : undefined} />
+            </Tooltip>
+
+            <Segmented<ThemeMode>
+              size="small"
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: 'light', icon: <SunOutlined />, title: 'Light' },
+                { value: 'dark', icon: <MoonOutlined />, title: 'Dark' },
+                { value: 'system', icon: <DesktopOutlined />, title: 'Follow system' },
+              ]}
+            />
+
+            <ApprovalNotification />
+
+            <Dropdown menu={{ items: userMenu }} trigger={['click']} placement="bottomRight">
+              <Button type="text" style={{ height: 40, paddingInline: token.paddingXS }}>
+                <Flex align="center" gap={token.marginXS}>
+                  <Avatar size="small" icon={<UserOutlined />} style={{ background: token.colorPrimary }} />
+                  {user && screens.md && <Text>{user.name}</Text>}
+                  {user && (
+                    <Tag color={ROLE_LABELS[user.role]?.color} style={{ marginInlineEnd: 0 }}>
+                      {ROLE_LABELS[user.role]?.label ?? user.role}
+                    </Tag>
+                  )}
+                </Flex>
+              </Button>
+            </Dropdown>
+          </Flex>
+        </Header>
+
+        <Content style={{ padding: screens.md ? token.paddingLG : token.padding, minWidth: 0 }}>
+          {/* Pages are lazy-loaded: keep the menu and header while one downloads */}
+          <Suspense fallback={<Skeleton active paragraph={{ rows: 8 }} style={{ maxWidth: 1400, margin: '0 auto' }} />}>
+            <Outlet />
+          </Suspense>
+          <FloatButton.BackTop visibilityHeight={400} />
         </Content>
       </Layout>
     </Layout>

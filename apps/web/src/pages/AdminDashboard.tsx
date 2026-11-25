@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Row, Col, Tag, Statistic, Typography, Space, Table, Badge, Skeleton, Alert } from 'antd';
+import { Alert, Badge, Card, Col, Result, Row, Skeleton, Space, Table, Tag, Typography } from 'antd';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -10,8 +10,11 @@ import {
 } from '@ant-design/icons';
 import { useHealthStatus } from '../lib/api/hooks/health';
 import socketClient from '../lib/websocket/socket-client';
+import { PageHeader } from '../components/common/PageHeader';
+import { StatCard } from '../components/common/StatCard';
+import { ClockCircleOutlined, AppstoreOutlined } from '@ant-design/icons';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const STATUS_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = {
   healthy: { color: 'green', icon: <CheckCircleOutlined /> },
@@ -42,14 +45,14 @@ const columns = [
     key: 'status',
     render: (status: string) => {
       const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.healthy;
-      return <Badge status={status === 'healthy' ? 'success' : status === 'degraded' ? 'warning' : 'error'} text={<Tag color={cfg.color} icon={cfg.icon}>{status}</Tag>} />;
+      return <Tag color={cfg.color} icon={cfg.icon}>{status}</Tag>;
     },
   },
   {
     title: 'Latency',
     dataIndex: 'latencyMs',
     key: 'latencyMs',
-    render: (ms?: number) => ms !== undefined ? `${ms}ms` : '-',
+    render: (ms?: number) => ms !== undefined ? <Badge status={ms > 1000 ? 'warning' : 'success'} text={`${ms} ms`} /> : '-',
   },
   {
     title: 'Error',
@@ -79,63 +82,52 @@ export const AdminDashboard: React.FC = () => {
   }, []);
 
   if (isLoading) {
-    return <Skeleton active paragraph={{ rows: 4 }} />;
+    return <Card><Skeleton active paragraph={{ rows: 4 }} /></Card>;
   }
 
   if (error) {
-    return (
-      <Card>
-        <Text type="danger">Failed to load health status</Text>
-      </Card>
-    );
+    return <Result status="error" title="Failed to load health status" subTitle="The API did not answer the health check." />;
   }
 
   const overallStatus = health?.status || 'unhealthy';
   const overallCfg = STATUS_CONFIG[overallStatus];
 
+  const healthyCount = health?.checks?.filter((c: { status: string }) => c.status === 'healthy').length || 0;
+
   return (
-    <div>
-      <Title level={4}>System Health</Title>
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+      <PageHeader title="System Health" subTitle="Live status of the API's dependencies and circuit breakers." />
 
       {healthAlerts.map((alert, i) => (
         <Alert
           key={i}
           type={alert.type === 'health:circuit_breaker_opened' ? 'error' : 'warning'}
-          message={alert.type === 'health:circuit_breaker_opened' ? 'Circuit Breaker Opened' : 'Service Degraded'}
+          title={alert.type === 'health:circuit_breaker_opened' ? 'Circuit Breaker Opened' : 'Service Degraded'}
           description={`${alert.payload?.service}: ${alert.payload?.error || 'Service is degraded'}`}
           showIcon
-          closable
-          onClose={() => setHealthAlerts((prev) => prev.filter((_, idx) => idx !== i))}
+          closable={{ onClose: () => setHealthAlerts((prev) => prev.filter((_, idx) => idx !== i)) }}
           style={{ marginBottom: 8 }}
         />
       ))}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title="Overall Status"
-              value={overallStatus}
-              prefix={overallCfg?.icon}
-              valueStyle={{ color: overallStatus === 'healthy' ? '#52c41a' : overallStatus === 'degraded' ? '#faad14' : '#ff4d4f' }}
-            />
-          </Card>
+          <StatCard
+            title="Overall Status"
+            value={overallStatus}
+            icon={overallCfg?.icon}
+            color={overallStatus === 'healthy' ? 'green' : overallStatus === 'degraded' ? 'gold' : 'red'}
+          />
         </Col>
         <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title="Services"
-              value={health?.checks?.length || 0}
-              suffix={`/ ${health?.checks?.filter((c: { status: string }) => c.status === 'healthy').length || 0} healthy`}
-            />
-          </Card>
+          <StatCard title="Services healthy" value={healthyCount} suffix={`/ ${health?.checks?.length || 0}`} icon={<AppstoreOutlined />} color="blue" />
         </Col>
         <Col xs={24} sm={8}>
-          <Card>
-            <Statistic
-              title="Last Check"
-              value={health?.timestamp ? new Date(health.timestamp).toLocaleTimeString() : '-'}
-            />
-          </Card>
+          <StatCard
+            title="Last Check"
+            value={health?.timestamp ? new Date(health.timestamp).toLocaleTimeString() : '-'}
+            icon={<ClockCircleOutlined />}
+            color="purple"
+          />
         </Col>
       </Row>
 
@@ -145,7 +137,7 @@ export const AdminDashboard: React.FC = () => {
           columns={columns}
           rowKey="name"
           pagination={false}
-          size="small"
+          size="middle"
         />
       </Card>
     </div>

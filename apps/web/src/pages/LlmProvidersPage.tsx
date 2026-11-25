@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Button, Card, Empty, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { Alert, App, Avatar, Button, Card, Empty, Flex, Form, Input, Modal, Popconfirm, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd';
 import { ApiOutlined, CloudDownloadOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { Permission } from '@ai-corp/shared-types';
 import { usePermission } from '../lib/permissions';
@@ -12,8 +12,10 @@ import {
   useLlmProviders,
   useRemoteModels,
 } from '../lib/api/hooks/llmProviders';
+import { PageHeader } from '../components/common/PageHeader';
+import { roleColor } from '../theme/palette';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const errorText = (e: any) => {
   const m = e?.response?.data?.message ?? e?.message ?? 'Request failed';
   return Array.isArray(m) ? m.join('; ') : m;
@@ -43,6 +45,7 @@ const KIND_LABELS: Record<ProviderKind, string> = { 'openai-compatible': 'OpenAI
  * then choose them per agent on the Agent Models page.
  */
 export const LlmProvidersPage: React.FC = () => {
+  const { message } = App.useApp();
   const canConfigure = usePermission(Permission.AGENT_CONFIGURE);
   const { data: providers = [], isLoading, error } = useLlmProviders();
   const m = useLlmProviderMutations();
@@ -67,10 +70,13 @@ export const LlmProvidersPage: React.FC = () => {
       title: 'Provider',
       key: 'name',
       render: (_: unknown, p: LlmProviderView) => (
-        <Space direction="vertical" size={0}>
-          <Text strong>{p.name}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>{KIND_LABELS[p.kind]} · {p.baseUrl || 'default URL'}</Text>
-        </Space>
+        <Flex gap={10} align="center">
+          <Avatar shape="square" icon={<ApiOutlined />} style={{ background: p.isEnabled ? '#1677ff' : undefined }} />
+          <div>
+            <Text strong>{p.name}</Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>{KIND_LABELS[p.kind]} · {p.baseUrl || 'default URL'}</Text>
+          </div>
+        </Flex>
       ),
     },
     {
@@ -89,7 +95,7 @@ export const LlmProvidersPage: React.FC = () => {
       title: 'Used by',
       dataIndex: 'usedBy',
       key: 'usedBy',
-      render: (roles: string[]) => (roles.length ? <Space size={[4, 4]} wrap>{roles.map(r => <Tag key={r}>{r}</Tag>)}</Space> : <Text type="secondary">—</Text>),
+      render: (roles: string[]) => (roles.length ? <Space size={[4, 4]} wrap>{roles.map(r => <Tag key={r} color={roleColor(r)}>{r}</Tag>)}</Space> : <Text type="secondary">—</Text>),
     },
     {
       title: 'Enabled',
@@ -127,20 +133,16 @@ export const LlmProvidersPage: React.FC = () => {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-        <div>
-          <Title level={4} style={{ margin: 0 }}>LLM Providers</Title>
-          <Text style={{ color: '#8b949e' }}>
-            Connect LLM providers and choose which of their models agents may use. API keys are encrypted on the server and never shown again.
-          </Text>
-        </div>
-        {canConfigure && <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>Add provider</Button>}
-      </div>
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+      <PageHeader
+        title="LLM Providers"
+        subTitle="Connect LLM providers and choose which of their models agents may use. API keys are encrypted on the server and never shown again."
+        extra={canConfigure && <Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing('new')}>Add provider</Button>}
+      />
 
-      {error && <Alert type="error" showIcon message={errorText(error)} style={{ marginBottom: 16 }} />}
+      {error && <Alert type="error" showIcon title={errorText(error)} style={{ marginBottom: 16 }} />}
 
-      <Card>
+      <Card styles={{ body: { padding: 0 } }}>
         <Table
           rowKey="id"
           loading={isLoading}
@@ -163,6 +165,7 @@ export const LlmProvidersPage: React.FC = () => {
 };
 
 const ModelsTable: React.FC<{ provider: LlmProviderView; canConfigure: boolean; onAdd: () => void; onBrowse: () => void }> = ({ provider, canConfigure, onAdd, onBrowse }) => {
+  const { message } = App.useApp();
   const m = useLlmProviderMutations();
   const onError = (e: unknown) => message.error(errorText(e));
 
@@ -171,10 +174,10 @@ const ModelsTable: React.FC<{ provider: LlmProviderView; canConfigure: boolean; 
       title: 'Model',
       key: 'model',
       render: (_: unknown, x: LlmModelView) => (
-        <Space direction="vertical" size={0}>
+        <Flex vertical align="start">
           <Text>{x.displayName}</Text>
           {x.displayName !== x.modelId && <Text type="secondary" style={{ fontSize: 11 }} code>{x.modelId}</Text>}
-        </Space>
+        </Flex>
       ),
     },
     {
@@ -225,6 +228,7 @@ const ModelsTable: React.FC<{ provider: LlmProviderView; canConfigure: boolean; 
 };
 
 const ProviderModal: React.FC<{ provider: LlmProviderView | null; onClose: () => void }> = ({ provider, onClose }) => {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const m = useLlmProviderMutations();
   const [keyHint, setKeyHint] = useState('');
@@ -251,7 +255,7 @@ const ProviderModal: React.FC<{ provider: LlmProviderView | null; onClose: () =>
   };
 
   return (
-    <Modal title={isNew ? 'Add provider' : `Edit ${provider!.name}`} open onCancel={onClose} onOk={() => form.submit()} okText={isNew ? 'Add' : 'Save'} confirmLoading={saving} destroyOnClose>
+    <Modal title={isNew ? 'Add provider' : `Edit ${provider!.name}`} open onCancel={onClose} onOk={() => form.submit()} okText={isNew ? 'Add' : 'Save'} confirmLoading={saving} destroyOnHidden>
       <Form
         form={form}
         layout="vertical"
@@ -290,6 +294,7 @@ const ProviderModal: React.FC<{ provider: LlmProviderView | null; onClose: () =>
 };
 
 const RemoteModelsModal: React.FC<{ provider: LlmProviderView; onClose: () => void }> = ({ provider, onClose }) => {
+  const { message } = App.useApp();
   const { data = [], isFetching, error, refetch } = useRemoteModels(provider.id);
   const m = useLlmProviderMutations();
   const [search, setSearch] = useState('');
@@ -330,7 +335,7 @@ const RemoteModelsModal: React.FC<{ provider: LlmProviderView; onClose: () => vo
       ]}
     >
       {error ? (
-        <Alert type="error" showIcon message="Could not fetch the model list" description={errorText(error)} action={<Button size="small" onClick={() => refetch()}>Retry</Button>} />
+        <Alert type="error" showIcon title="Could not fetch the model list" description={errorText(error)} action={<Button size="small" onClick={() => refetch()}>Retry</Button>} />
       ) : (
         <>
           <Input.Search allowClear placeholder="Filter, e.g. free, gpt, claude" value={search} onChange={e => setSearch(e.target.value)} style={{ marginBottom: 12 }} />
@@ -359,10 +364,11 @@ const RemoteModelsModal: React.FC<{ provider: LlmProviderView; onClose: () => vo
 };
 
 const AddModelModal: React.FC<{ provider: LlmProviderView; onClose: () => void }> = ({ provider, onClose }) => {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const m = useLlmProviderMutations();
   return (
-    <Modal title={`Add a model to ${provider.name}`} open onCancel={onClose} onOk={() => form.submit()} okText="Add" confirmLoading={m.addModels.isPending} destroyOnClose>
+    <Modal title={`Add a model to ${provider.name}`} open onCancel={onClose} onOk={() => form.submit()} okText="Add" confirmLoading={m.addModels.isPending} destroyOnHidden>
       <Form
         form={form}
         layout="vertical"

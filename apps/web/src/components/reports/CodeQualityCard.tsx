@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, Col, Empty, List, Row, Statistic, Table, Tag, Typography } from 'antd';
+import { Card, Col, Empty, Flex, Progress, Row, Statistic, Table, Tag, Typography, theme } from 'antd';
 import { FileAssessment, useCodeQuality } from '../../lib/api/hooks/analytics';
 import { SCORE_COLOR } from '../analytics/analyticsFormat';
 
@@ -11,15 +11,28 @@ const KIND_COLOR: Record<string, string> = { syntax: 'red', security: 'volcano',
  */
 export const CodeQualityCard: React.FC<{ projectId: string }> = ({ projectId }) => {
   const { data, isLoading } = useCodeQuality(projectId);
+  const { token } = theme.useToken();
 
   return (
-    <Card size="small" title="Code quality (static analysis)" loading={isLoading}>
+    <Card title="Code quality (static analysis)" loading={isLoading}>
       {!data || data.score === null ? (
         <Empty description="No generated source code yet" />
       ) : (
         <>
           <Row gutter={16}>
-            <Col xs={12} md={6}><Statistic title="Score" value={data.score} suffix={`/ 100`} valueStyle={{ color: SCORE_COLOR(data.score, data.threshold) === 'red' ? '#ff4d4f' : undefined }} /></Col>
+            <Col xs={12} md={6}>
+              <Flex gap={token.marginSM} align="center">
+                <Progress
+                  type="dashboard"
+                  size={72}
+                  percent={data.score}
+                  steps={{ count: 10, gap: 3 }}
+                  status={SCORE_COLOR(data.score, data.threshold) === 'red' ? 'exception' : 'normal'}
+                  strokeColor={SCORE_COLOR(data.score, data.threshold) === 'green' ? token.colorSuccess : SCORE_COLOR(data.score, data.threshold) === 'gold' ? token.colorWarning : undefined}
+                />
+                <Statistic title="Score" value={data.score} suffix="/ 100" styles={{ content: { color: SCORE_COLOR(data.score, data.threshold) === 'red' ? token.colorError : undefined } }} />
+              </Flex>
+            </Col>
             <Col xs={12} md={6}>
               <Statistic title="Predicted QA verdict" valueRender={() => <Tag color={data.predictedQaVerdict === 'pass' ? 'green' : 'red'}>{data.predictedQaVerdict?.toUpperCase()}</Tag>} value=" " />
             </Col>
@@ -35,9 +48,11 @@ export const CodeQualityCard: React.FC<{ projectId: string }> = ({ projectId }) 
             expandable={{
               rowExpandable: (f: FileAssessment) => f.findings.length > 0,
               expandedRowRender: (f: FileAssessment) => (
-                <List size="small" dataSource={f.findings} renderItem={x => (
-                  <List.Item><Tag color={KIND_COLOR[x.kind]}>{x.kind}</Tag><Text code>line {x.line}</Text> {x.message}</List.Item>
-                )} />
+                <Flex vertical gap={4}>
+                  {f.findings.map((x, i) => (
+                    <div key={i}><Tag color={KIND_COLOR[x.kind]}>{x.kind}</Tag><Text code>line {x.line}</Text> {x.message}</div>
+                  ))}
+                </Flex>
               ),
             }}
             columns={[

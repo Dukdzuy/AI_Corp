@@ -1,5 +1,5 @@
 import React from 'react';
-import { Modal, Typography, Space, Tag, Button, Input, Descriptions, Collapse } from 'antd';
+import { Modal, Typography, Space, Tag, Button, Input, Descriptions, Collapse, Form, theme } from 'antd';
 import { Permission } from '@ai-corp/shared-types';
 import { usePermission } from '../../lib/permissions';
 import { approvalSummary } from '../../lib/approvalSummary';
@@ -40,6 +40,7 @@ export const ApprovalModal: React.FC<ApprovalModalProps> = ({
   onReject,
 }) => {
   const canAnswer = usePermission(Permission.APPROVAL_GRANT);
+  const { token } = theme.useToken();
   const [comment, setComment] = React.useState('');
   const [rejecting, setRejecting] = React.useState(false);
 
@@ -63,12 +64,25 @@ export const ApprovalModal: React.FC<ApprovalModalProps> = ({
     if (reason) onReject(approval.approvalId, reason);
   };
 
+  const codeBox: React.CSSProperties = {
+    background: token.colorFillQuaternary,
+    border: `1px solid ${token.colorBorderSecondary}`,
+    borderRadius: token.borderRadius,
+    padding: `${token.paddingXS}px ${token.paddingSM}px`,
+    maxHeight: 200,
+    overflowY: 'auto',
+    fontFamily: token.fontFamilyCode,
+    fontSize: token.fontSizeSM,
+    margin: 0,
+    whiteSpace: 'pre-wrap',
+  };
+
   return (
     <Modal
       title={
         <Space>
-          <ExclamationCircleOutlined style={{ color: '#faad14' }} />
-          <Text style={{ color: '#e6edf3' }}>Approval Required</Text>
+          <ExclamationCircleOutlined style={{ color: token.colorWarning }} />
+          Approval Required
         </Space>
       }
       open={open}
@@ -85,81 +99,73 @@ export const ApprovalModal: React.FC<ApprovalModalProps> = ({
             {rejecting ? 'Send rejection' : 'Reject'}
           </Button>
           <Button
-            type="primary"
+            color="green"
+            variant="solid"
             icon={<CheckCircleOutlined />}
             onClick={handleApprove}
             loading={submitting && !rejecting}
             disabled={submitting && rejecting}
-            style={{ background: '#52c41a', borderColor: '#52c41a' }}
           >
             Approve
           </Button>
         </Space>
       }
-      width={600}
-      styles={{
-        content: { background: '#161b22', border: '1px solid #30363d' },
-        header: { background: '#161b22', borderBottom: '1px solid #30363d' },
-      }}
+      width={640}
     >
-      <Paragraph style={{ color: '#e6edf3', marginTop: 12 }}>{summary.message}</Paragraph>
+      <Paragraph style={{ marginTop: token.marginSM }}>{summary.message}</Paragraph>
 
       <Descriptions
         column={1}
         size="small"
-        labelStyle={{ color: '#8b949e', padding: '4px 0' }}
-        contentStyle={{ color: '#e6edf3', padding: '4px 0' }}
-      >
-        <Descriptions.Item label="Type">
-          <Tag color={typeCfg.color}>{typeCfg.label}</Tag>
-        </Descriptions.Item>
-        {approval.projectName && <Descriptions.Item label="Project">{approval.projectName}</Descriptions.Item>}
-        {summary.facts.map(fact => (
-          <Descriptions.Item key={fact.label} label={fact.label}>
-            <Text style={{ color: fact.tone === 'good' ? '#52c41a' : fact.tone === 'bad' ? '#ff4d4f' : '#e6edf3' }}>{fact.value}</Text>
-          </Descriptions.Item>
-        ))}
-        <Descriptions.Item label="Requested at">{approval.requestedAt.toLocaleString()}</Descriptions.Item>
-      </Descriptions>
+        bordered
+        items={[
+          { key: 'type', label: 'Type', children: <Tag color={typeCfg.color}>{typeCfg.label}</Tag> },
+          ...(approval.projectName ? [{ key: 'project', label: 'Project', children: approval.projectName }] : []),
+          ...summary.facts.map(fact => ({
+            key: fact.label,
+            label: fact.label,
+            children: <Text type={fact.tone === 'good' ? 'success' : fact.tone === 'bad' ? 'danger' : undefined}>{fact.value}</Text>,
+          })),
+          { key: 'at', label: 'Requested at', children: approval.requestedAt.toLocaleString() },
+        ]}
+      />
 
       {summary.excerpt && (
-        <div style={{ marginTop: 8 }}>
-          <Text style={{ color: '#8b949e', fontSize: 12, display: 'block', marginBottom: 4 }}>Latest agent output</Text>
-          <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 6, padding: '10px 12px', maxHeight: 200, overflowY: 'auto' }}>
-            <pre style={{ color: '#c9d1d9', fontSize: 12, margin: 0, whiteSpace: 'pre-wrap' }}>{summary.excerpt}</pre>
-          </div>
+        <div style={{ marginTop: token.marginSM }}>
+          <Text type="secondary" style={{ fontSize: token.fontSizeSM, display: 'block', marginBottom: 4 }}>Latest agent output</Text>
+          <pre style={codeBox}>{summary.excerpt}</pre>
         </div>
       )}
 
       <Collapse
         ghost
         size="small"
-        style={{ marginTop: 8 }}
+        style={{ marginTop: token.marginXS }}
         items={[{
           key: 'raw',
-          label: <Text style={{ color: '#8b949e', fontSize: 12 }}>Raw request data</Text>,
-          children: (
-            <pre style={{ color: '#8b949e', fontSize: 11, margin: 0, whiteSpace: 'pre-wrap', maxHeight: 200, overflowY: 'auto' }}>
-              {JSON.stringify(approval.requestData, null, 2)}
-            </pre>
-          ),
+          label: <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>Raw request data</Text>,
+          children: <pre style={codeBox}>{JSON.stringify(approval.requestData, null, 2)}</pre>,
         }]}
       />
 
       {canAnswer && (
-        <div style={{ marginTop: 12 }}>
-          <Text style={{ color: rejecting && !reason ? '#ff4d4f' : '#8b949e', fontSize: 12, display: 'block', marginBottom: 4 }}>
-            {rejecting ? 'What should change? (required, the agents rework with it)' : 'Comment (optional)'}
-          </Text>
-          <TextArea
-            rows={3}
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder={rejecting ? 'e.g. Add input validation to the order form and a test for it' : 'Add a comment for your decision...'}
-            style={{ background: '#0d1117', borderColor: rejecting && !reason ? '#ff4d4f' : '#30363d' }}
-            autoFocus={rejecting}
-          />
-        </div>
+        <Form layout="vertical" style={{ marginTop: token.marginSM }}>
+          <Form.Item
+            label={rejecting ? 'What should change? (required, the agents rework with it)' : 'Comment (optional)'}
+            validateStatus={rejecting && !reason ? 'error' : undefined}
+            style={{ marginBottom: token.marginLG }}
+          >
+            <TextArea
+              rows={3}
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder={rejecting ? 'e.g. Add input validation to the order form and a test for it' : 'Add a comment for your decision...'}
+              autoFocus={rejecting}
+              showCount
+              maxLength={2000}
+            />
+          </Form.Item>
+        </Form>
       )}
     </Modal>
   );
