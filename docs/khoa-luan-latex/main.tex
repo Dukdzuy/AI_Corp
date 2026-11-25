@@ -1,0 +1,72 @@
+% Khoá luận tốt nghiệp: nền tảng đa tác tử AI-CORP
+% Biên dịch bằng LuaLaTeX (yêu cầu của lớp uetgraduation):
+%   latexmk -lualatex main.tex
+\documentclass{uetgraduation}
+
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{fancyvrb}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\graphicspath{{hinh/}}
+
+% Kiểu đính kèm cho đoạn mã nguồn, đánh số theo chương như hình và bảng.
+\makeattachmenttype{codelisting}{htbp}{Đoạn mã}{}{%
+	\vspace{0.25cm}\attachmentcaptionbox{\centering\small\attachmentcaption}%
+}{lol}{\listofcodelistings}{Danh sách đoạn mã}
+
+% Mã nguồn viết liền trong câu.
+\newcommand\code[1]{\texttt{\detokenize{#1}}}
+% Cột bảng tự xuống dòng, căn trái.
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\newcolumntype{P}[1]{>{\raggedright\arraybackslash}p{#1}}
+\renewcommand\arraystretch{1.25}
+
+% Không cho hình, bảng nổi lên phía trên tiêu đề chương.
+\makeatletter
+\let\uet@chapter\chapter
+\renewcommand\chapter[1]{\uet@chapter{#1}\suppressfloats[t]}
+\makeatother
+
+\fvset{fontsize=\footnotesize,frame=single,framesep=2mm,numbers=none}
+
+\begin{document}
+
+\studentname{[Họ và tên sinh viên]}
+\title{Thiết kế và phát triển nền tảng đa tác tử tự động hoá quy trình doanh nghiệp theo hướng đối tượng}
+\documenttype{Khoá luận tốt nghiệp đại học hệ chính quy}
+\major{Công nghệ thông tin}
+\year{2026}
+\supervisor{PGS. TS. Trương Ninh Thuận}
+\englishtitle{Design and Development of a Multi-Agent Platform for Object-Oriented Enterprise Workflow Automation}
+\englishmajor{Information Technology}
+\englishsupervisor{Assoc. Prof., Dr. Trương Ninh Thuận}
+\makecovers
+
+\input{chuong/00-dau-sach}
+
+\begin{contentlisting}
+\tableofcontents
+\listoffigures
+\listoftables
+\listofcodelistings
+\input{chuong/00-viet-tat}
+\end{contentlisting}
+
+\input{chuong/01-gioi-thieu}
+\input{chuong/02-co-so-ly-thuyet}
+\input{chuong/03-phan-tich-yeu-cau}
+\input{chuong/04-thiet-ke}
+\input{chuong/05-hien-thuc}
+\input{chuong/06-kiem-thu-danh-gia}
+\input{chuong/07-thao-luan}
+\input{chuong/08-ket-luan}
+
+\input{chuong/90-tai-lieu-tham-khao}
+
+\appendix
+\input{chuong/95-phu-luc}
+
+\end{document}

@@ -1,0 +1,45 @@
+@startuml
+!include _style.iuml
+left to right direction
+skinparam packageStyle rectangle
+actor CEO
+actor BA
+actor Architect
+actor PM
+actor DEV
+actor QC
+actor QA
+actor Marketing
+actor "Hệ thống" as SYS
+rectangle "Nền tảng AI-CORP" {
+  usecase "UC-015 Điều phối quy trình" as U15
+  usecase "UC-009 Phân tích yêu cầu" as U9
+  usecase "UC-010 Thiết kế kiến trúc" as U10
+  usecase "UC-011 Lập kế hoạch" as U11
+  usecase "UC-012 Phát triển" as U12
+  usecase "UC-023 Phân tích chất lượng mã" as U23
+  usecase "UC-016 Kiểm chứng theo use case" as U16
+  usecase "UC-013 Rà soát mã" as U13
+  usecase "UC-014 Chiến lược marketing" as U14
+  usecase "UC-017 Quản lý bộ nhớ tác tử" as U17
+  usecase "UC-018 Định tuyến yêu cầu LLM" as U18
+  usecase "UC-019 Khôi phục quy trình" as U19
+  usecase "UC-021 Phòng họp tác tử" as U21
+  usecase "UC-024 Dự báo công sức, chi phí" as U24
+}
+CEO --> U15
+BA --> U9
+Architect --> U10
+PM --> U11
+DEV --> U12
+QC --> U16
+QA --> U13
+Marketing --> U14
+SYS --> U17
+SYS --> U18
+SYS --> U19
+SYS --> U21
+SYS --> U24
+U12 ..> U23 : <<include>>
+U16 ..> U9 : dùng kết quả
+@enduml

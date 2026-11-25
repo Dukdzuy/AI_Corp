@@ -1,0 +1,30 @@
+@startuml
+!include _style.iuml
+actor "Thành viên HĐQT" as U
+participant "Giao diện web" as W
+participant "Chuỗi guard" as G
+participant "ApprovalController" as C
+participant "ApprovalService" as S
+database "PostgreSQL" as DB
+participant "WorkflowEngine" as E
+participant "AuditInterceptor" as AU
+U -> W : bấm Duyệt (hoặc Từ chối + lý do)
+W -> G : POST /api/approvals/:id/approve
+G -> G : JWT → giới hạn tần suất → quyền
+G -> C
+C -> S : approve(id, user)
+S -> S : kiểm tra người được giao
+S -> DB : UPDATE ... WHERE status = 'pending'
+alt cập nhật 0 dòng
+  S --> C : 409 Conflict
+else cập nhật 1 dòng
+  S -> E : resume(runId, quyết định, lý do)
+  E -> DB : ghi quyết định vào biến lượt chạy
+  S --> C : 200
+end
+C -> AU : ghi approval.approve (ok/denied)
+note over W, G
+  Thông điệp WebSocket human:approval_response
+  bị từ chối: phê duyệt chỉ đi qua REST
+end note
+@enduml

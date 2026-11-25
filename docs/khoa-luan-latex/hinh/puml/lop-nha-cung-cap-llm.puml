@@ -1,0 +1,51 @@
+@startuml
+!include _style.iuml
+interface ILLMProvider {
+  + chat(messages, options)
+}
+class UsageTrackingLLMProvider <<Decorator>> {
+  - inner: ILLMProvider
+  + chat(...)
+}
+class LLMProviderFactory <<Factory Method>> {
+  + create(config): ILLMProvider
+}
+class AgentLLMService <<Facade>> {
+  + providerFor(profile, projectId)
+}
+class ConfiguredProviderRegistry {
+  - cache
+  + clientFor(providerId)
+}
+class LlmProviderConfig <<aggregate root>> {
+  name, kind, baseUrl
+  encryptedKey
+  + addModel(m) / removeModel(id)
+}
+class LlmModel <<entity>>
+interface ProviderStrategy {
+  + createClient(config)
+  + testConnection(config)
+  + listModels(config)
+}
+class OpenAICompatibleStrategy
+class AnthropicStrategy
+class ProviderStrategyRegistry
+interface SecretCipher <<port>> {
+  + encrypt(plain) / decrypt(cipher)
+}
+class AesGcmSecretCipher
+ILLMProvider <|.. UsageTrackingLLMProvider
+UsageTrackingLLMProvider o--> ILLMProvider
+AgentLLMService --> LLMProviderFactory
+AgentLLMService ..> UsageTrackingLLMProvider : bọc
+LLMProviderFactory --> ConfiguredProviderRegistry
+ConfiguredProviderRegistry --> ProviderStrategyRegistry
+ProviderStrategyRegistry o--> ProviderStrategy
+ProviderStrategy <|.. OpenAICompatibleStrategy
+ProviderStrategy <|.. AnthropicStrategy
+ConfiguredProviderRegistry ..> LlmProviderConfig
+LlmProviderConfig *-- "*" LlmModel
+LlmProviderConfig ..> SecretCipher
+SecretCipher <|.. AesGcmSecretCipher
+@enduml

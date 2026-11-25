@@ -1,0 +1,65 @@
+@startuml
+!include _style.iuml
+skinparam nodesep 30
+class Project <<aggregate root>> {
+  name, description
+  budget: Money
+  spent: Money
+  status: ProjectStatus
+  ownerId
+}
+class Milestone <<entity>>
+class Task <<entity>> {
+  status: todo|in_progress|review|done
+  + transitionTo(s)
+}
+class Money <<value object>>
+class ProjectStatus <<value object>>
+class Agent <<aggregate root>> {
+  role: AgentRole
+  modelConfig, providerId
+}
+class AgentMemory <<entity>> {
+  namespace, content, importance
+}
+class WorkflowRun <<aggregate root>> {
+  status, context: JSON
+  definitionVersion: id@ver+hash
+  parentRunId
+}
+class WorkflowStep <<entity>> {
+  nodeId, durationMs, result
+}
+class WorkflowSnapshot <<entity>>
+class Approval <<entity>> {
+  status: pending|approved|rejected
+  assigneeId, reason
+}
+class User <<entity>>
+class Role <<entity>>
+class AuditLog <<append-only>>
+class ApiUsageLog <<entity>> {
+  tokens, cost
+}
+class LlmProviderConfig <<aggregate root>> {
+  kind, baseUrl, encryptedKey
+}
+class LlmModel <<entity>>
+Project "1" *-- "*" Milestone
+Project "1" *-- "*" Task
+Project --> Money
+Project --> ProjectStatus
+Project "1" -- "*" WorkflowRun
+WorkflowRun "1" *-- "*" WorkflowStep
+WorkflowRun "1" *-- "*" WorkflowSnapshot
+WorkflowRun "1" -- "*" Approval
+WorkflowRun "0..1" -- "*" WorkflowRun : lượt chạy con
+Agent "1" *-- "*" AgentMemory
+Task "*" --> "0..1" Agent : giao cho
+User "*" --> "1" Role
+User "1" -- "*" Project : sở hữu
+ApiUsageLog "*" --> "1" Project
+LlmProviderConfig "1" *-- "*" LlmModel
+Agent "*" ..> "0..1" LlmProviderConfig
+AuditLog ..> User
+@enduml

@@ -1,0 +1,53 @@
+@startuml
+!include _style.iuml
+class WorkflowEngine {
+  - strategies: Map<type, NodeExecutionStrategy>
+  + startRun(definition, projectId)
+  + handleJobCompletion(job)
+  + pause(runId) / resume(runId)
+  + rollback(runId, snapshotId)
+}
+interface NodeExecutionStrategy {
+  + type: NodeType
+  + execute(node, run, ctx): Promise<NodeResult>
+}
+class AgentTaskStrategy
+class SubWorkflowStrategy <<Composite>>
+class QualityGateStrategy
+class ConditionStrategy
+class ParallelStrategy
+class HumanApprovalStrategy
+class "AgentCollaborationStrategy\n(pair_develop, clarification_loop,\nreview_chain)" as Collab
+class WorkflowDefinitionRegistry {
+  + register(def): id@ver+hash
+  + get(id, version)
+}
+class WorkflowSnapshotCaretaker {
+  + save(memento)
+  + restore(snapshotId)
+}
+class WorkflowRunMemento <<Memento>> {
+  currentNode, context, status
+}
+class DependencyResolver {
+  + topologicalOrder(branches)
+}
+abstract class WorkflowTemplate {
+  + parameters: TypedParam[]
+  + build(params): WorkflowDefinition
+}
+WorkflowEngine o--> "*" NodeExecutionStrategy
+NodeExecutionStrategy <|.. AgentTaskStrategy
+NodeExecutionStrategy <|.. SubWorkflowStrategy
+NodeExecutionStrategy <|.. QualityGateStrategy
+NodeExecutionStrategy <|.. ConditionStrategy
+NodeExecutionStrategy <|.. ParallelStrategy
+NodeExecutionStrategy <|.. HumanApprovalStrategy
+NodeExecutionStrategy <|.. Collab
+SubWorkflowStrategy ..> WorkflowEngine : chạy lượt chạy con
+ParallelStrategy ..> DependencyResolver
+WorkflowEngine --> WorkflowDefinitionRegistry
+WorkflowEngine --> WorkflowSnapshotCaretaker
+WorkflowSnapshotCaretaker o--> "*" WorkflowRunMemento
+WorkflowTemplate ..> WorkflowDefinitionRegistry : đăng ký định nghĩa
+@enduml

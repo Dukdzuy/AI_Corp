@@ -1,0 +1,56 @@
+\chapter{Giới thiệu}
+\label{chap:gioi-thieu}
+
+\section{Đặt vấn đề}
+
+Một phần mềm doanh nghiệp thường do cả một nhóm người cùng làm. Người phân tích nghiệp vụ ngồi với khách hàng rồi ghi yêu cầu lại thành các use case. Kiến trúc sư dựa vào đó dựng mô hình miền, chọn mẫu thiết kế, vẽ sơ đồ lớp và sơ đồ tuần tự. Người quản lý dự án chia việc và giữ ngân sách. Lập trình viên viết mã, người kiểm thử viết và chạy ca kiểm thử, còn người đảm bảo chất lượng xem cả quy trình lẫn sản phẩm có đi đúng thiết kế không. Phân tích và thiết kế hướng đối tượng (OOAD) cho cả nhóm một cách nói chung với nhau. Use case cho biết hệ thống phải làm gì khi nhìn từ phía người dùng~\cite{jacobson1992}. Mô hình miền và sơ đồ lớp cho biết hệ thống gồm những phần nào, sơ đồ tuần tự và sơ đồ trạng thái cho biết các phần ấy phối hợp với nhau ra sao~\cite{booch2005,omg2017uml}. Mẫu thiết kế thì ghi lại những lời giải mà nhiều thế hệ lập trình viên đã dùng và thấy ổn~\cite{gamma1994,fowler2002}.
+
+Trong thực tế, chuỗi việc này hay đứt ở hai chỗ. Chỗ thứ nhất là tài liệu thiết kế. Viết xong rồi thì không ai buộc nó phải khớp với mã, nên chỉ sau vài vòng sửa, sơ đồ lớp đã mô tả một hệ thống không còn nữa. Chỗ thứ hai là chất lượng. Một use case được báo ``đã xong'' mà không có kiểm thử nào cho thấy điều đó. Một mô-đun được bảo là ``theo kiến trúc phân lớp'' nhưng tầng miền vẫn gọi thẳng thư viện truy cập cơ sở dữ liệu.
+
+Mấy năm gần đây, mô hình ngôn ngữ lớn (LLM) đã viết được cả một hàm hoàn chỉnh từ mô tả bằng lời~\cite{chen2021} và sửa được một phần lỗi thật trong các kho mã mở~\cite{jimenez2024}. Từ đó xuất hiện những hệ đa tác tử mô phỏng nguyên một nhóm phát triển, trong đó mỗi vai trò giao cho một tác tử. MetaGPT~\cite{hong2024}, ChatDev~\cite{qian2024} và AutoGen~\cite{wu2023} là các ví dụ hay được nhắc tới. Những hệ này chủ yếu chấm điểm ở sản phẩm cuối, tức là mã có chạy hay không. Người làm OOAD lại quan tâm hai câu hỏi ít được đặt ra hơn. Bản thân hệ đa tác tử có được thiết kế tốt theo hướng đối tượng không? Sản phẩm nó làm ra có lần ngược được từ kiểm thử về tới yêu cầu không?
+
+Đề tài bắt đầu từ một nền tảng đa tác tử có sẵn, gồm năm tác tử (CEO, PM, DEV, QA, Marketing) và một bộ máy quy trình đơn giản. Rà soát lại thì thấy nền tảng này mắc những lỗi quen thuộc của phần mềm làm vội. Tầng miền có viết nhưng không chỗ nào dùng. Lớp tác tử cơ sở gánh quá nhiều việc. Các dịch vụ trộn logic nghiệp vụ với câu truy vấn cơ sở dữ liệu. Chưa có Repository, chưa có sự kiện miền, tài liệu UML còn thiếu. Nặng nhất là mọi tệp tác tử tạo ra đều mất sau mỗi lần chạy, vì chúng được ghi vào một sandbox không gắn ổ lưu trữ. Khoá luận này viết lại nền tảng đó theo OOAD và mở rộng thành AI-CORP.
+
+\section{Câu hỏi nghiên cứu}
+
+Khoá luận đi tìm câu trả lời cho ba câu hỏi:
+
+\begin{itemize}
+\item \textbf{RQ1.} Nếu áp dụng có hệ thống các nguyên lý OOAD (kiến trúc phân lớp, SOLID, mẫu thiết kế, thiết kế hướng miền) thì kiến trúc của một hệ đa tác tử dùng LLM có tốt hơn về tính mô-đun, khả năng mở rộng và khả năng kiểm thử không?
+\item \textbf{RQ2.} Những mẫu thiết kế nào hợp với việc điều phối tác tử và quy trình làm việc của chúng?
+\item \textbf{RQ3.} Tác tử học từ những lần chạy trước bằng cách nào, và làm sao đo việc học đó một cách khách quan?
+\end{itemize}
+
+Ba câu hỏi được trả lời lần lượt ở chương~\ref{chap:thao-luan}, dựa trên số liệu đo ở chương~\ref{chap:kiem-thu}.
+
+\section{Mục tiêu và phạm vi}
+
+Mục tiêu là thiết kế và làm ra một nền tảng đa tác tử đạt bốn yêu cầu:
+
+\begin{enumerate}
+\item Bản thân nền tảng là một sản phẩm OOAD đầy đủ, gồm đặc tả use case, mô hình miền, đủ sáu nhóm sơ đồ UML, kiến trúc phân lớp, mẫu thiết kế gắn với vấn đề cụ thể và bộ kiểm thử tự động có số đo.
+\item Mọi dự án do nền tảng sinh ra cũng đi theo OOAD và truy vết được từ use case tới kiểm thử.
+\item Chất lượng phải đo được chứ không chỉ nói suông. Nền tảng có cổng chất lượng, kiểm thử chấp nhận chạy thật, phân tích tĩnh, phân tích hiệu năng từng tác tử và so dự báo với kết quả thực tế.
+\item Nền tảng có những tính năng doanh nghiệp cần khi đem vào dùng: phân quyền, nhật ký kiểm toán, API tích hợp, xuất báo cáo và cấu hình triển khai.
+\end{enumerate}
+
+Phạm vi đề tài có ba giới hạn. Thứ nhất, nền tảng dừng lại ở một dự án đã được phân tích, thiết kế, lập trình và kiểm thử. Đưa dự án đó lên môi trường vận hành không thuộc đề tài. Vì vậy vai trò DevOps của nền tảng cũ bị bỏ, vai trò kiểm soát chất lượng (QC) được thêm vào, còn vai trò đảm bảo chất lượng (QA) được hiểu lại theo hướng kiểm soát quy trình (mục~\ref{sec:tac-nhan}). Thứ hai, các dự án sinh ra đều viết bằng TypeScript để nền tảng tự phân tích tĩnh và tự chạy kiểm thử cho chúng. Thứ ba, mọi phép đo dùng một LLM kịch bản, tức một máy chủ nói cùng giao thức với OpenAI nhưng trả lời theo kịch bản soạn sẵn, để ai chạy lại cũng ra đúng kết quả đó. Nền tảng chạy được với bất kỳ cổng LLM nào tương thích OpenAI. Tuy vậy, việc đánh giá chất lượng đầu ra khi dùng LLM thật không nằm trong các phép đo và được bàn ở phần hạn chế.
+
+\section{Phương pháp thực hiện}
+
+Khoá luận làm theo hướng nghiên cứu khoa học thiết kế (design science)~\cite{hevner2004}. Trước hết dựng một tạo tác, ở đây là nền tảng AI-CORP. Sau đó đánh giá nó bằng những phép đo chạy lại được, rồi rút ra hiểu biết về thiết kế từ chính các số đo ấy. Việc phát triển đi theo vòng lặp: rà soát hiện trạng, phân tích yêu cầu thành use case, thiết kế, viết mã theo kiểu viết kiểm thử trước~\cite{beck2002}, chạy kiểm thử đầu cuối trên hạ tầng thật (PostgreSQL, Redis, nginx), rà soát mã giao diện và logic theo từng màn hình, và ghi lại mọi lỗi tìm được cùng cách sửa. Con số nào trong khoá luận cũng có nguồn trong kho mã, hoặc là tệp kết quả, hoặc là câu lệnh để chạy lại.
+
+\section{Đóng góp của khoá luận}
+
+Khoá luận có bốn đóng góp chính:
+
+\begin{enumerate}
+\item Một kiến trúc tham chiếu cho hệ đa tác tử dùng LLM theo OOAD. Tầng miền gồm 106 tệp, không phụ thuộc framework. Mỗi tác tử dựng theo Template Method cùng hai Strategy. Tác tử, công việc và lượt chạy quy trình đều có máy trạng thái riêng. Các mô-đun nói chuyện với nhau qua sự kiện miền, còn mọi phụ thuộc vào hạ tầng đều đi qua Repository hoặc cổng (port).
+\item Đem OOAD áp vào chính sản phẩm của các tác tử theo một chuỗi: use case, mô hình miền, sơ đồ UML, mã nguồn bốn tầng, kiểm thử chấp nhận và ma trận truy vết. Đi kèm chuỗi này là cổng chất lượng OOAD, phân tích tĩnh để bắt lỗi vi phạm phân lớp và một vòng tự sửa có giới hạn chi phí.
+\item Một bộ máy quy trình có quy trình con (Composite), định nghĩa quy trình theo phiên bản không sửa được, chụp và khôi phục trạng thái (Memento), nhánh song song có ràng buộc phụ thuộc và mẫu quy trình có tham số định kiểu.
+\item Một cách đánh giá dựa vào số đo. Hiệu năng tác tử được chấm theo tiêu chí riêng của từng vai trò. Mô hình dự báo được đánh giá bằng sai số leave-one-out. Phán quyết QA dự đoán được đem so với phán quyết thật, và lần chạy đầu cuối nào cũng để lại vết.
+\end{enumerate}
+
+\section{Bố cục khoá luận}
+
+Sau phần giới thiệu này còn bảy chương. Chương~\ref{chap:co-so} trình bày cơ sở lý thuyết về OOAD, hệ đa tác tử, điều phối quy trình và việc dùng LLM trong kỹ nghệ phần mềm. Phần yêu cầu và mô hình use case nằm ở chương~\ref{chap:yeu-cau}. Tiếp đó, chương~\ref{chap:thiet-ke} đi qua thiết kế: kiến trúc, mẫu thiết kế, tác tử, bộ máy quy trình, dữ liệu và cách nền tảng áp OOAD vào dự án nó sinh ra. Chương~\ref{chap:hien-thuc} kể lại phần hiện thực, còn chương~\ref{chap:kiem-thu} đưa ra kết quả kiểm thử và các số đo. Ba câu hỏi nghiên cứu được trả lời ở chương~\ref{chap:thao-luan}, cùng với những hạn chế. Chương cuối, chương~\ref{chap:ket-luan}, tổng kết và nêu hướng phát triển. Phụ lục liệt kê sơ đồ UML, API, cách tái tạo số liệu và hướng dẫn sử dụng.

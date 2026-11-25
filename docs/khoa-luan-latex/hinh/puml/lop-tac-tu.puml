@@ -1,0 +1,51 @@
+@startuml
+!include _style.iuml
+interface IAgent {
+  + getRole(): AgentRole
+  + getState(): AgentState
+  + execute(ctx: AgentContext): Promise<AgentResult>
+}
+abstract class "BaseAgent<TOutput>" as BaseAgent {
+  # profile: RoleProfile
+  # thinkingStrategy: IThinkingStrategy
+  # actionStrategy: IActionStrategy<TOutput>
+  - running: Set<AgentStateMachine>
+  + execute(ctx): Promise<AgentResult<TOutput>>
+  # prepareContext(ctx): AgentContext
+}
+class RoleProfile <<value object>> {
+  role, displayName, systemPrompt
+  defaultModel, taskTypes
+  + resolveTaskType(t): string
+}
+interface IThinkingStrategy {
+  + think(ctx): Promise<AgentThought>
+}
+interface "IActionStrategy<TOutput>" as IActionStrategy {
+  + act(ctx, thought): Promise<AgentActionResult<TOutput>>
+}
+class AgentStateMachine {
+  + transitionTo(s: AgentState, reason): void
+  + canTransitionTo(s): boolean
+}
+class "CeoAgent, BaAgent, ArchitectAgent, PmAgent,\nDevAgent, QcAgent, QaAgent, MarketingAgent" as Concrete
+class "8 chiến lược tư duy\n(CeoThinkingStrategy, ...)" as TS
+class "8 chiến lược hành động\n(DevActionStrategy, ...)" as AS
+class AgentLLMService <<Facade>> {
+  + providerFor(profile, projectId)
+}
+class AgentOrchestrator {
+  - byRole: Map<AgentRole, IAgent>
+}
+IAgent <|.. BaseAgent
+BaseAgent <|-- Concrete
+BaseAgent o--> RoleProfile
+BaseAgent o--> IThinkingStrategy
+BaseAgent o--> IActionStrategy
+BaseAgent ..> AgentStateMachine : tạo mới mỗi lần execute()
+IThinkingStrategy <|.. TS
+IActionStrategy <|.. AS
+TS ..> AgentLLMService
+AS ..> AgentLLMService
+AgentOrchestrator o--> "8" IAgent : token AGENTS
+@enduml

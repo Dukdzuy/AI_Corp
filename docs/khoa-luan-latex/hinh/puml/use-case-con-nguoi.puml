@@ -1,0 +1,44 @@
+@startuml
+!include _style.iuml
+left to right direction
+skinparam packageStyle rectangle
+actor "Quản trị viên" as AD
+actor "Thành viên\nhội đồng quản trị" as BM
+actor "Người xem" as VW
+actor "Công cụ bên ngoài\n(khoá API)" as EXT
+rectangle "Nền tảng AI-CORP" {
+  usecase "UC-001 Xác thực" as U1
+  usecase "UC-002 Tạo dự án" as U2
+  usecase "UC-004 Thực thi quy trình" as U4
+  usecase "UC-005 Duyệt bước quy trình" as U5
+  usecase "UC-006 Từ chối bước quy trình" as U6
+  usecase "UC-007 Theo dõi tiến độ" as U7
+  usecase "UC-008 Xem chi phí" as U8
+  usecase "UC-022 Tạo báo cáo dự án" as U22
+  usecase "UC-026 Duyệt sản phẩm dự án" as U26
+  usecase "UC-003 Cấu hình tác tử" as U3
+  usecase "UC-029 Quản lý người dùng, vai trò" as U29
+  usecase "UC-030 Xem nhật ký kiểm toán" as U30
+  usecase "UC-031 Quản lý khoá API, webhook" as U31
+  usecase "UC-032 Gọi API tích hợp" as U32
+  usecase "UC-033 Xem phân tích tác tử" as U33
+}
+VW --> U1
+VW --> U7
+BM --> U2
+BM --> U5
+BM --> U8
+BM --> U22
+BM --> U26
+BM --> U33
+AD --> U3
+AD --> U29
+AD --> U30
+AD --> U31
+EXT --> U32
+BM -|> VW
+AD -|> BM
+U2 ..> U4 : <<include>>
+U4 ..> U5 : <<include>>
+U6 ..> U5 : <<extend>>
+@enduml

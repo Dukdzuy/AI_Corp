@@ -1,0 +1,76 @@
+\chapter{Thảo luận}
+\label{chap:thao-luan}
+
+Chương này dùng số liệu ở chương~\ref{chap:kiem-thu} để trả lời ba câu hỏi nghiên cứu nêu ở chương~\ref{chap:gioi-thieu}. Sau đó là phần bàn về những yếu tố có thể làm lệch kết quả đánh giá và những gì nền tảng còn thiếu.
+
+\section{RQ1: OOAD có làm kiến trúc hệ đa tác tử tốt hơn không?}
+
+Câu trả lời là có, nhưng kèm một điều kiện sẽ nói ở cuối mục. Bằng chứng được xét theo ba mặt: tính mô-đun, khả năng mở rộng và khả năng kiểm thử.
+
+\textbf{Tính mô-đun.} Tầng miền gồm 106 tệp, 7\,226 dòng, không nhập NestJS, Prisma hay thư viện LLM nào. Mọi phụ thuộc vào hạ tầng đều đi qua giao diện Repository hoặc các cổng như \code{ICodeAnalyzer}. Các mô-đun gửi sự kiện miền cho nhau qua \code{EventBus}, nhờ đó kiểm toán, webhook và phân tích hiệu năng được thêm vào mà nơi phát sự kiện không phải sửa. Trong lúc làm, nhiều thay đổi lớn chỉ đụng tới đúng một chỗ trong mã. Ghi chi phí cho cả tám vai trò là một Decorator bọc quanh nhà cung cấp LLM. Vá lỗ hổng phê duyệt qua WebSocket là xoá một luồng ghi và chuyển giao diện sang REST, còn phần kiểm tra quyền và kiểm toán giữ nguyên. Chặn chi tiêu khi hết ngân sách là một bước kiểm tra trong bộ máy trước mỗi nút, còn các chiến lược nút không cần biết bước này có tồn tại.
+
+\textbf{Khả năng mở rộng.} Thêm một vai trò tác tử chỉ cần một giá trị \code{AgentRole}, một \code{RoleProfile}, hai lớp chiến lược và một dòng đăng ký provider, còn \code{AgentOrchestrator} và \code{WorkflowEngine} giữ nguyên. Thêm một loại nút chỉ cần một \code{NodeExecutionStrategy} tự đăng ký, và quy trình con, cổng chất lượng, phê duyệt và ba kiểu cộng tác đều được thêm theo đúng cách đó. Thêm định dạng xuất, quy tắc phát hiện bất thường hay tín hiệu chất lượng cũng chỉ là thêm một lớp vào sổ đăng ký. Ví dụ rõ nhất là tính năng quản lý nhà cung cấp LLM, làm sau khi các tác tử đã xong. Tính năng này gồm một aggregate mới, một cổng mã hoá và một chiến lược cho mỗi loại nhà cung cấp, thế mà không tác tử, chiến lược tác tử hay decorator ghi chi phí nào phải sửa, vì tất cả chỉ biết tới \code{ILLMProvider}. Ở phía web cũng vậy. Lần chuyển giao diện sang Ant Design 6 thay gần như toàn bộ phần hiển thị (43 tệp thay đổi), nhưng không phải sửa lời gọi API hay store nào, và 44 kiểm thử web vẫn đạt nguyên.
+
+\textbf{Khả năng kiểm thử.} Tầng miền không phụ thuộc framework nên quy tắc nghiệp vụ được kiểm thử như hàm thuần, không cần giả lập, và đạt độ bao phủ 97,1\% số dòng, 88,1\% số nhánh. Chiến lược tác tử được kiểm thử với LLM và sandbox giả lập qua giao diện. Bộ máy quy trình chạy được cả khi có lẫn khi không có Redis. Toàn API có độ bao phủ thấp hơn, 77,8\% số dòng, do phần mã nối với framework. Phân bố như vậy là hợp lý, vì chỗ nào chứa logic ra quyết định thì chỗ đó được kiểm thử kỹ nhất.
+
+\textbf{Điều kiện.} Mã có cấu trúc OOAD đẹp chưa chắc thiết kế đó đã thật sự được dùng. Mục~\ref{sec:loi} có sáu lỗi thuộc nhóm ``thiết kế OOAD không được dùng''. Bốn trên tám tác tử vẫn chạy theo luồng cũ, nên lớp chiến lược của chúng thành mã chết. Cổng chất lượng đã viết mà chưa đăng ký vào bộ máy. Sản phẩm tác tử mất sau mỗi lệnh chạy trong sandbox. Vậy mà kiểm thử đơn vị của các lớp này vẫn đạt hết. Chỉ kiểm thử đầu cuối trên hạ tầng thật, khi kiểm tra những thứ quan sát được như tệp trên đĩa, dòng kiểm toán hay trạng thái lượt chạy, mới làm lộ các lỗi đó. Vậy OOAD chỉ làm kiến trúc tốt hơn khi đi cùng những kiểm thử cho thấy từng luồng thiết kế thật sự được chạy, chẳng hạn kiểm tra mọi vai trò đều đi qua \code{BaseAgent.execute()} và mọi chiến lược đã đăng ký đều được gọi. Đợt rà soát giao diện và logic còn cho thấy thêm một điều: kiểm thử đầu cuối chỉ chứng minh được những luồng nó đi qua. Mười ba lỗi nằm ở các thao tác ngoài luồng chính, và chỉ lộ ra khi đọc từng màn hình rồi so với API.
+
+\section{RQ2: Mẫu thiết kế nào hiệu quả nhất cho việc điều phối?}
+
+Ở đây, mẫu hiệu quả là mẫu đạt được hai điều rất thực tế: giữ được thay đổi nằm gọn ở một chỗ, và giúp tìm ra hoặc chặn trước lỗi trong lúc phát triển. Xếp theo hai tiêu chí đó thì thứ tự như sau.
+
+\begin{enumerate}
+\item \textbf{Template Method kết hợp Strategy cho tác tử} có giá trị nhất. Chu trình chung gồm phát sự kiện, chuyển trạng thái, quản lý bộ nhớ, xử lý lỗi nằm gọn một chỗ, còn chuyên môn của từng vai trò nằm trong hai chiến lược thay được độc lập. Khi phát hiện bốn tác tử còn chạy luồng cũ, chỉ cần đưa chúng về chung khung là mọi tính năng gắn với khung (ghi chi phí, học, phát sự kiện) có hiệu lực ngay cho cả bốn.
+\item \textbf{Strategy tự đăng ký cho nút quy trình} cùng \textbf{Composite} cho quy trình con giúp bộ máy lớn dần từ một chuỗi thẳng thành đồ thị có nhánh song song, quy trình con, phê duyệt và cộng tác mà vòng lặp thực thi không phải sửa.
+\item \textbf{State}, kèm một bài học về phạm vi: máy trạng thái phải gắn với thứ thật sự có vòng đời. Gắn cho mỗi vai trò thì hai công việc chạy song song làm hỏng trạng thái của nhau, gắn cho mỗi lần thực thi thì chạy đúng. Với công việc và dự án, đặt bất biến chuyển trạng thái ngay trong thực thể đã chặn được các thao tác Kanban sai từ tầng miền.
+\item \textbf{Observer và sự kiện miền} cho các mối quan tâm cắt ngang như kiểm toán, webhook, phân tích hiệu năng, thông báo thời gian thực. Mặt trái của cách này lộ ra qua hai lỗi ``thiếu sự kiện''. Một sự kiện không được phát thì mọi bên đang nghe đều im re, và chỉ kiểm thử đầu cuối mới phát hiện ra.
+\item \textbf{Memento và sổ đăng ký bất biến} giúp việc khôi phục và ghim phiên bản đơn giản hẳn, vì định nghĩa mà một lượt chạy đang dùng không bao giờ bị đổi.
+\item \textbf{Mediator} (\code{AgentMessageBus}) giữ cho các tác tử không phụ thuộc thẳng vào nhau khi cộng tác, đồng thời cho một chỗ duy nhất để giới hạn số vòng trao đổi và đưa hội thoại lên giao diện.
+\end{enumerate}
+
+Những mẫu ít liên quan tới điều phối nhưng có ích cho phần còn lại gồm Decorator để ghi chi phí, Facade làm cửa duy nhất gọi LLM, Chain of Responsibility cho chuỗi guard và chuỗi rà soát, Port/Adapter cho phân tích mã.
+
+Xuyên qua các trường hợp trên có một điểm chung: mẫu thiết kế có ích nhất khi nó tạo ra một điểm kiểm soát duy nhất. Lỗ hổng WebSocket có là vì tồn tại một luồng ghi thứ hai đi vòng qua điểm kiểm soát ấy. Các lỗi tìm được khi rà soát cũng cùng kiểu. Nút \textit{Pause} đổi trạng thái dự án mà không qua bộ máy quy trình. Chi phí được cộng kiểu đọc rồi ghi ở hai nơi. Trạng thái phê duyệt được kiểm tra ở một bước nhưng lại cập nhật ở bước khác. Cả ba đều được sửa bằng cách dồn thao tác về một điểm có tính nguyên tử. Thao tác với lượt chạy nằm trong bộ máy, phép cộng chi phí là phép tăng nguyên tử trong cơ sở dữ liệu, còn trả lời phê duyệt là cập nhật có điều kiện trên trạng thái \code{pending}.
+
+\section{RQ3: Tác tử học từ kết quả thế nào và đo ra sao?}
+
+Nền tảng có hai kiểu học, và mỗi kiểu được đo theo một cách khác nhau.
+
+\textbf{Học để dự báo} dùng lịch sử lượt chạy để ước lượng thời gian và chi phí. Kiểu học này đo thẳng được bằng sai số leave-one-out. Sau tám dự án, MAPE theo vai trò từ 3\% (Architect) tới 30\% (DEV), còn dự báo lúc bắt đầu có sai số trung bình khoảng 20\%. Sai số lớn nhất đến từ việc làm lại sau khi QA từ chối, chuyện không ai biết trước được. Vì vậy nền tảng đặt dự báo cạnh kết quả thật và không coi dự báo là lời hứa.
+
+\textbf{Học để làm sản phẩm tốt hơn} là chắt lọc các kết quả khách quan (cổng OOAD, kiểm thử của QC, phán quyết QA) thành bài học rồi đưa vào lời nhắc ở những lần sau. Các lần chạy đầu cuối cho thấy chuỗi xử lý chạy đúng. Kết quả được ghi cho đúng vai trò, bài học được chắt lọc sau mỗi N kết quả và có mặt trong lời nhắc tiếp theo. Có điều khoá luận chưa đo được bài học giúp sản phẩm tốt lên bao nhiêu. LLM kịch bản trả lời không phụ thuộc vào bài học trong lời nhắc, nên so trước và sau kiểu gì cũng như nhau. Bởi vậy khoá luận không đưa ra con số cải thiện nào trong điều kiện này.
+
+Cách đo khoá luận đề xuất như sau, và đây cũng là hướng phát triển đầu tiên ở chương~\ref{chap:ket-luan}. Dùng LLM thật với nhiệt độ cố định. Chia một tập dự án cố định thành hai nhóm, một nhóm bật học và một nhóm tắt (đặt \code{LEARNING_REFINE_EVERY} để tắt). Chạy mỗi nhóm nhiều lần rồi so tỉ lệ đạt cổng OOAD ngay lần đầu, số lần QA từ chối, số vòng sửa và chi phí làm lại, kèm kiểm định thống kê. Hạ tầng cho thí nghiệm này đã có đủ: tín hiệu kết quả, phân tích hiệu năng theo vai trò và chi phí của từng lời gọi.
+
+\section{Những yếu tố có thể làm sai lệch đánh giá}
+\label{sec:hop-le}
+
+Phần này dùng cách phân loại quen thuộc trong nghiên cứu thực nghiệm kỹ nghệ phần mềm: tính hợp lệ nội tại, tính hợp lệ cấu trúc và tính hợp lệ ngoại tại.
+
+\textbf{Tính hợp lệ nội tại: LLM kịch bản.} Mọi lần chạy đầu cuối đều dùng một máy chủ LLM kịch bản tương thích OpenAI, trả lời theo nội dung lời nhắc (tên dự án, vai trò, bước) với độ trễ và giá giả lập. Nhờ vậy kết quả lặp lại được, và có thể kiểm thử chính xác những nhánh khó tái hiện với LLM thật như mã vi phạm phân lớp, QA từ chối hay mô hình ngừng hoạt động. Đổi lại, kết quả chỉ chứng minh được trong một phạm vi nhất định:
+
+\begin{itemize}
+\item Kết quả về luồng điều khiển là đáng tin. Quy trình đi đúng nhánh, trạng thái được lưu, quyền được kiểm tra, chi phí được ghi, lỗi được xử lý. Những kết quả này không phụ thuộc nội dung câu trả lời của LLM.
+\item Kết quả về chất lượng nội dung chỉ mang tính minh hoạ. Độ chính xác 100\% của dự đoán chất lượng mã có được vì lỗi được cài đúng loại bộ phân tích bắt được. Số use case, số tệp và độ bao phủ use case của các dự án trình diễn phản ánh kịch bản đã soạn, chưa phản ánh năng lực của một mô hình thật.
+\item Số liệu thời gian có chứa độ trễ giả lập (20~ms cộng 1~ms cho mỗi 25 ký tự lời nhắc). Với LLM thật, mỗi lời gọi thường mất vài giây và chiếm phần lớn tổng thời gian. Đó là lý do yêu cầu 2 giây cho mỗi nút được định nghĩa là không tính độ trễ LLM.
+\item Mô hình dự báo học trên thời lượng và chi phí do kịch bản sinh ra, nên MAPE thấp của Architect và CEO một phần là nhờ hành vi giả lập rất ổn định. Với LLM thật, phương sai sẽ lớn hơn và sai số dự kiến cao hơn.
+\end{itemize}
+
+\textbf{Tính hợp lệ cấu trúc.} ``Chất lượng OOAD'' của dự án sinh ra được đo bằng cổng chất lượng và bộ phân tích tĩnh do chính khoá luận định nghĩa: đủ use case, thực thể và sơ đồ, không vi phạm phân lớp, độ phức tạp trong ngưỡng. Đây là điều kiện cần chứ chưa đủ, vì một thiết kế qua được cổng vẫn có thể bị chuyên gia chê. Tương tự, độ bao phủ mã chỉ cho biết dòng nào được chạy, không nói gì về chất lượng của các khẳng định (assertion) trong kiểm thử.
+
+\textbf{Tính hợp lệ ngoại tại.} Kiểm thử tải chạy một tiến trình API trên máy 4 lõi dùng chung với bộ sinh tải, nên thông lượng đo được là cận dưới cho cấu hình này, không dùng để suy ra cho một cụm máy. Các dự án sinh ra đều là ứng dụng TypeScript nhỏ, khoảng 35 tệp, nên chưa biết nền tảng có xử lý được dự án lớn hay ngôn ngữ khác hay không. Khoá luận cũng chưa làm nghiên cứu với người dùng thật, nên chưa thể nói nền tảng giúp được một nhóm phát triển tới đâu.
+
+\textbf{Cách giảm thiểu.} Để hạn chế các yếu tố trên, khoá luận chỉ báo số liệu từ những lần chạy có lưu vết, tách bạch kết quả về luồng điều khiển với kết quả về nội dung, và công bố mã nguồn của LLM kịch bản cùng các script đo để người khác chạy lại hoặc thay bằng LLM thật.
+
+\section{Hạn chế của nền tảng}
+
+\begin{itemize}
+\item \textbf{Sandbox.} Môi trường đo không có Docker daemon nên 15 kiểm thử sandbox container bị bỏ qua. Các lần chạy đầu cuối thực thi kiểm thử của dự án sinh ra trong một bản sao tạm trên máy chủ (\code{SANDBOX_ALLOW_LOCAL_RUN=true}). Cách này an toàn trong phạm vi khoá luận vì mã do LLM kịch bản viết. Với LLM thật thì bắt buộc phải dùng sandbox container, và luồng đó chưa được kiểm chứng đầu cuối.
+\item \textbf{Ngôn ngữ đích.} Mẫu sản phẩm, bộ phân tích tĩnh và việc chạy kiểm thử chấp nhận hiện chỉ hỗ trợ TypeScript.
+\item \textbf{Con người trong vòng lặp.} Phê duyệt là nút chặn. Người dùng duyệt hoặc từ chối kèm lý do, và lý do được chuyển cho các tác tử phía sau. Nền tảng chưa cho sửa trực tiếp sản phẩm rồi để quy trình chạy tiếp từ bản đã sửa, chưa cho giao lại yêu cầu phê duyệt cho người khác, và quy trình mặc định chưa có nhánh riêng khi bị từ chối.
+\item \textbf{Mở rộng ngang.} API không giữ trạng thái nên chạy được nhiều tiến trình, nhưng cấu hình triển khai hiện chỉ có một và chưa được thử tải ở chế độ nhiều bản sao. Muốn WebSocket chạy với nhiều bản sao thì cần thêm adapter Redis cho Socket.IO.
+\item \textbf{Bảo mật.} Phân quyền, khoá API, giới hạn tần suất, ký HMAC, kiểm toán, kiểm tra cấu hình production đều đã được kiểm thử về chức năng nhưng chưa qua kiểm thử xâm nhập độc lập. Lỗ hổng WebSocket ở mục~\ref{sec:loi} cho thấy cần rà mọi luồng ghi dữ liệu.
+\item \textbf{Giao diện.} Giao diện mới chỉ có nhãn tiếng Anh. Chế độ sáng, tối và chế độ gọn đã có, nhưng chưa được kiểm tra với trình đọc màn hình hay trên điện thoại.
+\item \textbf{Chi phí.} Không nút nào bắt đầu khi đã hết ngân sách, nhưng một nút đang chạy vẫn có thể làm vượt ngân sách một khoản bằng chi phí của chính nút đó. Nền tảng chưa ước lượng chi phí trước mỗi lời gọi để chặn sớm, và chưa huỷ các lời gọi LLM quá hạn.
+\item \textbf{Phiên đăng nhập.} Phiên hết hạn sau 8 giờ và người dùng phải đăng nhập lại, vì nền tảng chưa có token làm mới (refresh token).
+\end{itemize}

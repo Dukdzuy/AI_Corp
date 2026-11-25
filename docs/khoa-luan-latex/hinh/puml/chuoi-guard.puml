@@ -1,0 +1,19 @@
+@startuml
+!include _style.iuml
+left to right direction
+rectangle "Yêu cầu HTTP" as R
+rectangle "AuthenticationGuard\nJWT hoặc khoá API" as A
+rectangle "RateLimitGuard\ntheo khoá" as L
+rectangle "PermissionGuard\n@RequirePermission" as P
+rectangle "Controller\n+ AuditInterceptor" as C
+rectangle "401" as E1
+rectangle "429" as E2
+rectangle "403 + access.denied" as E3
+R --> A
+A --> L
+L --> P
+P --> C
+A --> E1
+L --> E2
+P --> E3
+@enduml
