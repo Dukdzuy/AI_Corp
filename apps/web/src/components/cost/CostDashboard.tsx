@@ -1,339 +1,173 @@
 import React from 'react';
-import { Typography, Row, Col, Card, Statistic, Space, Tag, Table, Empty, Skeleton } from 'antd';
-import {
-  DollarOutlined,
-  ThunderboltOutlined,
-  CloudOutlined,
-  BarChartOutlined,
-} from '@ant-design/icons';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-} from 'recharts';
-import { useCostSummary, AgentCostBreakdown, ModelUsage } from '../../lib/api/hooks/cost';
+import { Card, Col, Empty, Row, Skeleton, Table, Tag, Typography } from 'antd';
+import { BarChartOutlined, CloudOutlined, DollarOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Column, Line, Pie } from '@ant-design/plots';
+import { useCostSummary } from '../../lib/api/hooks/cost';
+import { StatCard } from '../common/StatCard';
+import { useChartTheme } from '../../theme/charts';
 
-const { Title, Text } = Typography;
-
-const AGENT_COLORS: Record<string, string> = {
-  CEO: '#722ed1',
-  PM: '#1677ff',
-  DEV: '#52c41a',
-  QA: '#fa8c16',
-  QC: '#13c2c2',
-  BA: '#2f54eb',
-  ARCHITECT: '#a0d911',
-  MARKETING: '#eb2f96',
-};
-
-const PIE_COLORS = ['#722ed1', '#1677ff', '#52c41a', '#fa8c16', '#eb2f96', '#13c2c2'];
+const { Text } = Typography;
 
 interface CostDashboardProps {
   projectId?: string;
 }
 
-const StatCard: React.FC<{
-  title: string;
-  value: string | number;
-  prefix?: React.ReactNode;
-  color: string;
-  suffix?: string;
-}> = ({ title, value, prefix, color, suffix }) => (
-  <Card
-    style={{
-      background: '#161b22',
-      border: '1px solid #30363d',
-      borderRadius: 10,
-    }}
-    styles={{ body: { padding: '16px 20px' } }}
-  >
-    <Space align="center" size={12}>
-      <div
-        style={{
-          background: color + '22',
-          borderRadius: 8,
-          padding: '8px 10px',
-          fontSize: 20,
-          color,
-        }}
-      >
-        {prefix}
-      </div>
-      <Statistic
-        title={<Text style={{ color: '#8b949e', fontSize: 12 }}>{title}</Text>}
-        value={value}
-        suffix={suffix}
-        valueStyle={{ color: '#e6edf3', fontSize: 20, fontWeight: 600 }}
-      />
-    </Space>
-  </Card>
-);
-
+/** LLM cost and token usage: KPI tiles, Ant Design Charts (donut, grouped columns, line) and a model table */
 export const CostDashboard: React.FC<CostDashboardProps> = ({ projectId }) => {
   const { data: summary, isLoading } = useCostSummary(projectId);
+  const chart = useChartTheme();
 
   if (isLoading) {
-    return <Skeleton active paragraph={{ rows: 6 }} />;
+    return <Card><Skeleton active paragraph={{ rows: 6 }} /></Card>;
   }
 
   if (!summary) return null;
 
   const hasData = summary.totalTokens > 0;
+  const roles = summary.byAgent.map(a => a.agentRole);
 
-  const agentPieData = summary.byAgent.map((a) => ({
-    name: a.agentRole,
-    value: a.totalCost,
-  }));
-
-  const agentBarData = summary.byAgent.map((a) => ({
-    name: a.agentRole,
-    cost: Number(a.totalCost.toFixed(4)),
-    tokens: a.totalTokens,
-    rtk: a.rtkTokensSaved,
-  }));
-
-  const modelBarData = summary.byModel.map((m) => ({
-    name: m.model.length > 16 ? m.model.slice(0, 16) + '...' : m.model,
-    requests: m.requestCount,
-    cost: Number(m.cost.toFixed(4)),
-    fallbacks: m.fallbackTriggered,
-  }));
+  const agentPieData = summary.byAgent.map(a => ({ role: a.agentRole, cost: Number(a.totalCost.toFixed(4)) }));
+  const tokenData = summary.byAgent.flatMap(a => [
+    { role: a.agentRole, kind: 'Tokens', value: a.totalTokens },
+    { role: a.agentRole, kind: 'RTK Saved', value: a.rtkTokensSaved },
+  ]);
 
   return (
     <div>
-      {/* Summary Stats */}
-      <Row gutter={[12, 12]} style={{ marginBottom: 20 }}>
-        <Col xs={12} md={6}>
-          <StatCard
-            title="Total Cost"
-            value={summary.totalCost.toFixed(4)}
-            prefix={<DollarOutlined />}
-            color="#faad14"
-            suffix="USD"
-          />
+      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+        <Col xs={12} xl={6}>
+          <StatCard title="Total Cost" value={summary.totalCost} precision={4} prefix="$" icon={<DollarOutlined />} color="gold" />
         </Col>
-        <Col xs={12} md={6}>
-          <StatCard
-            title="Total Tokens"
-            value={summary.totalTokens.toLocaleString()}
-            prefix={<ThunderboltOutlined />}
-            color="#1677ff"
-          />
+        <Col xs={12} xl={6}>
+          <StatCard title="Total Tokens" value={summary.totalTokens} icon={<ThunderboltOutlined />} color="blue" />
         </Col>
-        <Col xs={12} md={6}>
-          <StatCard
-            title="RTK Tokens Saved"
-            value={summary.rtkTokensSaved.toLocaleString()}
-            prefix={<CloudOutlined />}
-            color="#52c41a"
-          />
+        <Col xs={12} xl={6}>
+          <StatCard title="RTK Tokens Saved" value={summary.rtkTokensSaved} icon={<CloudOutlined />} color="green" />
         </Col>
-        <Col xs={12} md={6}>
-          <StatCard
-            title="Models Used"
-            value={summary.byModel.length}
-            prefix={<BarChartOutlined />}
-            color="#722ed1"
-          />
+        <Col xs={12} xl={6}>
+          <StatCard title="Models Used" value={summary.byModel.length} icon={<BarChartOutlined />} color="purple" />
         </Col>
       </Row>
 
       {hasData ? (
         <Row gutter={[16, 16]}>
-          {/* Cost by Agent Pie Chart */}
-          <Col xs={24} lg={8}>
-            <Card
-              title={<Text style={{ color: '#e6edf3', fontSize: 13 }}>Cost by Agent</Text>}
-              style={{
-                background: '#161b22',
-                border: '1px solid #30363d',
-                borderRadius: 10,
-                height: 320,
-              }}
-              styles={{ header: { background: '#161b22', borderBottom: '1px solid #30363d' }, body: { padding: 12 } }}
-            >
+          <Col xs={24} lg={9}>
+            <Card title="Cost by Agent" style={{ height: '100%' }}>
               {agentPieData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={240}>
-                  <PieChart>
-                    <Pie
-                      data={agentPieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      dataKey="value"
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      labelLine={false}
-                    >
-                      {agentPieData.map((_, idx) => (
-                        <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 6 }}
-                      formatter={(value: number) => [`$${value.toFixed(4)}`, 'Cost']}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                <Pie
+                  data={agentPieData}
+                  angleField="cost"
+                  colorField="role"
+                  innerRadius={0.62}
+                  height={280}
+                  theme={chart.theme}
+                  scale={chart.roleScale(roles)}
+                  label={false}
+                  legend={{ color: { position: 'bottom', layout: { justifyContent: 'center' } } }}
+                  tooltip={{ items: [{ channel: 'y', name: 'Cost', valueFormatter: (v: number) => `$${v.toFixed(4)}` }] }}
+                  annotations={[
+                    {
+                      type: 'text',
+                      style: {
+                        text: `$${summary.totalCost.toFixed(2)}`,
+                        x: '50%',
+                        y: '50%',
+                        textAlign: 'center',
+                        fontSize: 20,
+                        fontWeight: 600,
+                        fill: chart.token.colorText,
+                      },
+                    },
+                  ]}
+                />
               ) : (
-                <Empty description={<Text style={{ color: '#484f58' }}>No data</Text>} />
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No data" />
               )}
             </Card>
           </Col>
 
-          {/* Cost by Agent Bar Chart */}
-          <Col xs={24} lg={16}>
-            <Card
-              title={<Text style={{ color: '#e6edf3', fontSize: 13 }}>Token Usage by Agent</Text>}
-              style={{
-                background: '#161b22',
-                border: '1px solid #30363d',
-                borderRadius: 10,
-                height: 320,
-              }}
-              styles={{ header: { background: '#161b22', borderBottom: '1px solid #30363d' }, body: { padding: 12 } }}
-            >
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={agentBarData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
-                  <XAxis dataKey="name" tick={{ fill: '#8b949e', fontSize: 11 }} />
-                  <YAxis tick={{ fill: '#8b949e', fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 6 }}
-                    formatter={(value: number, name: string) => {
-                      if (name === 'cost') return [`$${value.toFixed(4)}`, 'Cost'];
-                      return [value.toLocaleString(), name === 'rtk' ? 'RTK Saved' : 'Tokens'];
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar dataKey="tokens" fill="#1677ff" name="Tokens" radius={[2, 2, 0, 0]} />
-                  <Bar dataKey="rtk" fill="#52c41a" name="RTK Saved" radius={[2, 2, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+          <Col xs={24} lg={15}>
+            <Card title="Token Usage by Agent" style={{ height: '100%' }}>
+              <Column
+                data={tokenData}
+                xField="role"
+                yField="value"
+                colorField="kind"
+                group
+                height={280}
+                theme={chart.theme}
+                scale={{ color: { range: [chart.token.colorPrimary, chart.token.colorSuccess] } }}
+                style={{ radiusTopLeft: 4, radiusTopRight: 4 }}
+                axis={{ y: { labelFormatter: '~s' } }}
+                legend={{ color: { position: 'top' } }}
+                tooltip={{ items: [{ channel: 'y', valueFormatter: (v: number) => v.toLocaleString() }] }}
+              />
             </Card>
           </Col>
 
-          {/* Model Usage Table */}
+          {summary.costOverTime.length > 0 && (
+            <Col xs={24}>
+              <Card title="Cost Over Time">
+                <Line
+                  data={summary.costOverTime}
+                  xField="date"
+                  yField="cost"
+                  height={240}
+                  theme={chart.theme}
+                  shapeField="smooth"
+                  style={{ lineWidth: 2, stroke: chart.token.colorWarning }}
+                  area={{ style: { fill: `linear-gradient(-90deg, ${chart.token.colorWarning}00 0%, ${chart.token.colorWarning}55 100%)` } }}
+                  axis={{ y: { labelFormatter: (v: number) => `$${v}` } }}
+                  tooltip={{ items: [{ channel: 'y', name: 'Cost', valueFormatter: (v: number) => `$${v.toFixed(4)}` }] }}
+                />
+              </Card>
+            </Col>
+          )}
+
           <Col xs={24}>
-            <Card
-              title={<Text style={{ color: '#e6edf3', fontSize: 13 }}>Model Usage Breakdown</Text>}
-              style={{
-                background: '#161b22',
-                border: '1px solid #30363d',
-                borderRadius: 10,
-              }}
-              styles={{ header: { background: '#161b22', borderBottom: '1px solid #30363d' } }}
-            >
+            <Card title="Model Usage Breakdown" styles={{ body: { padding: 0 } }}>
               <Table
                 dataSource={summary.byModel}
                 rowKey="model"
-                size="small"
+                size="middle"
                 pagination={false}
+                scroll={{ x: 720 }}
                 columns={[
+                  { title: 'Model', dataIndex: 'model', key: 'model', render: (model: string) => <Text code>{model}</Text> },
+                  { title: 'Provider', dataIndex: 'provider', key: 'provider', render: (provider: string) => <Tag color="blue">{provider}</Tag> },
+                  { title: 'Requests', dataIndex: 'requestCount', key: 'requestCount', align: 'right' as const, sorter: (a, b) => a.requestCount - b.requestCount },
                   {
-                    title: <Text style={{ color: '#8b949e', fontSize: 12 }}>Model</Text>,
-                    dataIndex: 'model',
-                    key: 'model',
-                    render: (model: string) => (
-                      <Text style={{ color: '#e6edf3', fontSize: 12, fontFamily: 'monospace' }}>{model}</Text>
-                    ),
-                  },
-                  {
-                    title: <Text style={{ color: '#8b949e', fontSize: 12 }}>Provider</Text>,
-                    dataIndex: 'provider',
-                    key: 'provider',
-                    render: (provider: string) => (
-                      <Tag color="blue" style={{ fontSize: 11 }}>{provider}</Tag>
-                    ),
-                  },
-                  {
-                    title: <Text style={{ color: '#8b949e', fontSize: 12 }}>Requests</Text>,
-                    dataIndex: 'requestCount',
-                    key: 'requestCount',
-                    render: (v: number) => (
-                      <Text style={{ color: '#e6edf3', fontSize: 12 }}>{v}</Text>
-                    ),
-                  },
-                  {
-                    title: <Text style={{ color: '#8b949e', fontSize: 12 }}>Tokens</Text>,
+                    title: 'Tokens',
                     dataIndex: 'totalTokens',
                     key: 'totalTokens',
-                    render: (v: number) => (
-                      <Text style={{ color: '#e6edf3', fontSize: 12 }}>{v.toLocaleString()}</Text>
-                    ),
+                    align: 'right' as const,
+                    sorter: (a, b) => a.totalTokens - b.totalTokens,
+                    render: (v: number) => v.toLocaleString(),
                   },
                   {
-                    title: <Text style={{ color: '#8b949e', fontSize: 12 }}>Cost</Text>,
+                    title: 'Cost',
                     dataIndex: 'cost',
                     key: 'cost',
-                    render: (v: number) => (
-                      <Text style={{ color: '#faad14', fontSize: 12 }}>${v.toFixed(4)}</Text>
-                    ),
+                    align: 'right' as const,
+                    defaultSortOrder: 'descend' as const,
+                    sorter: (a, b) => a.cost - b.cost,
+                    render: (v: number) => <Text type="warning">${v.toFixed(4)}</Text>,
                   },
                   {
-                    title: <Text style={{ color: '#8b949e', fontSize: 12 }}>Fallbacks</Text>,
+                    title: 'Fallbacks',
                     dataIndex: 'fallbackTriggered',
                     key: 'fallbackTriggered',
-                    render: (v: number) => (
-                      <Tag color={v > 0 ? 'orange' : 'default'} style={{ fontSize: 11 }}>{v}</Tag>
-                    ),
+                    align: 'center' as const,
+                    render: (v: number) => <Tag color={v > 0 ? 'orange' : 'default'}>{v}</Tag>,
                   },
                 ]}
               />
             </Card>
           </Col>
-
-          {/* Cost Over Time */}
-          {summary.costOverTime.length > 0 && (
-            <Col xs={24}>
-              <Card
-                title={<Text style={{ color: '#e6edf3', fontSize: 13 }}>Cost Over Time</Text>}
-                style={{
-                  background: '#161b22',
-                  border: '1px solid #30363d',
-                  borderRadius: 10,
-                }}
-                styles={{ header: { background: '#161b22', borderBottom: '1px solid #30363d' }, body: { padding: 12 } }}
-              >
-                <ResponsiveContainer width="100%" height={240}>
-                  <LineChart data={summary.costOverTime}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
-                    <XAxis dataKey="date" tick={{ fill: '#8b949e', fontSize: 11 }} />
-                    <YAxis tick={{ fill: '#8b949e', fontSize: 11 }} />
-                    <Tooltip
-                      contentStyle={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 6 }}
-                      formatter={(value: number, name: string) => {
-                        if (name === 'cost') return [`$${value.toFixed(4)}`, 'Cost'];
-                        return [value.toLocaleString(), 'Tokens'];
-                      }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Line type="monotone" dataKey="cost" stroke="#faad14" name="Cost" dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </Card>
-            </Col>
-          )}
         </Row>
       ) : (
-        <Card
-          style={{
-            background: '#161b22',
-            border: '1px solid #30363d',
-            borderRadius: 10,
-          }}
-        >
-          <Empty description={<Text style={{ color: '#8b949e' }}>No cost data yet. Data will appear when LLM calls are made.</Text>} />
+        <Card>
+          <Empty description="No cost data yet. Data will appear when LLM calls are made." />
         </Card>
       )}
     </div>

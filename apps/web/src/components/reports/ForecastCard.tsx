@@ -2,6 +2,7 @@ import React from 'react';
 import { Card, Col, Empty, Row, Statistic, Table, Tag, Typography } from 'antd';
 import { useProjectEstimate } from '../../lib/api/hooks/analytics';
 import { duration, trendText, usd } from '../analytics/analyticsFormat';
+import { roleColor } from '../../theme/palette';
 
 const { Text } = Typography;
 const CONFIDENCE_COLOR = { low: 'red', medium: 'gold', high: 'green' } as const;
@@ -15,7 +16,7 @@ export const ForecastCard: React.FC<{ projectId: string }> = ({ projectId }) => 
   const current = data?.current;
 
   return (
-    <Card size="small" title="Effort & cost forecast" loading={isLoading} extra={current && <Tag color={CONFIDENCE_COLOR[current.confidence]}>{current.confidence} confidence</Tag>}>
+    <Card title="Effort & cost forecast" loading={isLoading} extra={current && <Tag color={CONFIDENCE_COLOR[current.confidence]}>{current.confidence} confidence</Tag>}>
       {!current || !current.byRole.length ? (
         <Empty description="No finished project to learn from yet" />
       ) : (
@@ -39,7 +40,7 @@ export const ForecastCard: React.FC<{ projectId: string }> = ({ projectId }) => 
           <Table
             rowKey="role" size="small" pagination={false} dataSource={current.byRole}
             columns={[
-              { title: 'Agent', dataIndex: 'role', key: 'role', render: (r: string) => <Tag color="blue">{r}</Tag> },
+              { title: 'Agent', dataIndex: 'role', key: 'role', render: (r: string) => <Tag color={roleColor(r)}>{r}</Tag> },
               { title: 'Time', dataIndex: 'durationMs', key: 't', render: (ms: number) => duration(ms) },
               { title: 'Cost', dataIndex: 'cost', key: 'c', render: (c: number) => usd(c) },
               { title: 'Method', key: 'm', render: (_: unknown, r: any) => <Text type="secondary">{r.method} ({r.samples})</Text> },

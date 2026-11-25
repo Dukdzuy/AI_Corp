@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Select, Button, Typography, Space, Tag, message, Skeleton } from 'antd';
+import { App, Avatar, Button, Card, Flex, Select, Skeleton, Space, Table, Tag, Tooltip, Typography, theme } from 'antd';
 import { Permission } from '@ai-corp/shared-types';
 import { usePermission } from '../lib/permissions';
 import { CloudServerOutlined, RobotOutlined, SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../lib/api/client';
+import { PageHeader } from '../components/common/PageHeader';
+import { roleHex } from '../theme/palette';
+import { useIsDark } from '../theme/AppThemeProvider';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface AgentModel {
   role: string;
@@ -28,17 +31,6 @@ interface AvailableModel {
 const optionKey = (config?: AgentModel['modelRouteConfig']) =>
   config?.providerId ? `${config.providerId}::${config.model}` : config?.model;
 
-const ROLE_COLORS: Record<string, string> = {
-  CEO: '#722ed1',
-  PM: '#1677ff',
-  DEV: '#52c41a',
-  QA: '#fa8c16',
-  QC: '#13c2c2',
-  BA: '#2f54eb',
-  ARCHITECT: '#a0d911',
-  MARKETING: '#eb2f96',
-};
-
 const CATEGORY_COLORS: Record<string, string> = {
   general: 'blue',
   code: 'green',
@@ -54,6 +46,9 @@ export const AgentSettings: React.FC = () => {
   const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const { message } = App.useApp();
+  const { token } = theme.useToken();
+  const dark = useIsDark();
 
   const fetchData = async () => {
     setLoading(true);
@@ -108,20 +103,30 @@ export const AgentSettings: React.FC = () => {
     }, {})
   );
 
+  const modelOptions = groupedModels.map(([provider, models]) => ({
+    label: provider,
+    title: provider,
+    options: models.map(model => ({
+      value: model.key,
+      label: `${model.name} ${model.id} ${provider}`,
+      model,
+    })),
+  }));
+
   const columns = [
     {
       title: 'Agent',
       dataIndex: 'role',
       key: 'role',
+      width: 260,
       render: (role: string, record: AgentModel) => (
-        <Space>
-          <RobotOutlined style={{ color: ROLE_COLORS[role] || '#8b949e' }} />
+        <Flex gap={token.marginSM} align="center">
+          <Avatar icon={<RobotOutlined />} style={{ background: roleHex(role, dark) }} />
           <div>
-            <Text strong style={{ color: ROLE_COLORS[role] }}>{role}</Text>
-            <br />
-            <Text style={{ color: '#8b949e', fontSize: 12 }}>{record.name}</Text>
+            <a onClick={() => navigate(`/agents/${role.toLowerCase()}`)}><Text strong>{role}</Text></a>
+            <Text type="secondary" style={{ fontSize: token.fontSizeSM, display: 'block' }}>{record.name}</Text>
           </div>
-        </Space>
+        </Flex>
       ),
     },
     {
@@ -131,12 +136,12 @@ export const AgentSettings: React.FC = () => {
         const modelId = record.modelRouteConfig?.model || 'N/A';
         const model = availableModels.find((m) => m.key === optionKey(record.modelRouteConfig));
         return (
-          <Space direction="vertical" size={2}>
-            <Text style={{ color: '#e6edf3' }}>{model?.name || modelId}</Text>
-            <Tag color="geekblue" style={{ fontSize: 11 }}>
+          <Flex vertical gap={2} align="start">
+            <Text>{model?.name || modelId}</Text>
+            <Tag color="geekblue" variant="outlined">
               {model?.provider || record.modelRouteConfig?.provider || 'unknown'}
             </Tag>
-          </Space>
+          </Flex>
         );
       },
     },
@@ -148,80 +153,68 @@ export const AgentSettings: React.FC = () => {
         const hasChanged = !!pendingChanges[record.role];
 
         return (
-          <Space>
+          <Space.Compact>
             <Select
               style={{ width: 320 }}
               disabled={!canConfigure}
               value={currentValue}
               onChange={(val) => handleModelChange(record.role, val)}
               placeholder="Select a model"
-              showSearch
-              optionFilterProp="label"
-            >
-              {groupedModels.map(([provider, models]) => (
-                <Select.OptGroup key={provider} label={provider}>
-                  {models.map((model) => (
-                    <Select.Option key={model.key} value={model.key} label={`${model.name} ${model.id} ${provider}`}>
-                      <Space>
-                        <Text>{model.name}</Text>
-                        <Tag color={CATEGORY_COLORS[model.category] || 'default'} style={{ fontSize: 10 }}>
-                          {model.category}
-                        </Tag>
-                      </Space>
-                    </Select.Option>
-                  ))}
-                </Select.OptGroup>
-              ))}
-            </Select>
+              showSearch={{ optionFilterProp: 'label' }}
+              options={modelOptions}
+              optionRender={option => {
+                const model = (option.data as any).model as AvailableModel | undefined;
+                if (!model) return option.label;
+                return (
+                  <Flex justify="space-between" align="center" gap={8}>
+                    <Text ellipsis>{model.name}</Text>
+                    <Tag color={CATEGORY_COLORS[model.category] || 'default'} style={{ margin: 0 }}>{model.category}</Tag>
+                  </Flex>
+                );
+              }}
+              labelRender={({ value }) => {
+                const model = availableModels.find(m => m.key === value);
+                return model ? model.name : String(value ?? '');
+              }}
+            />
             {hasChanged && (
-              <Button
-                type="primary"
-                icon={<SaveOutlined />}
-                size="small"
-                loading={saving}
-                onClick={() => handleSave(record.role)}
-              >
-                Save
-              </Button>
+              <Tooltip title="Save the new model">
+                <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => handleSave(record.role)}>
+                  Save
+                </Button>
+              </Tooltip>
             )}
-          </Space>
+          </Space.Compact>
         );
       },
     },
   ];
 
-  if (loading) {
-    return <Skeleton active paragraph={{ rows: 4 }} />;
-  }
-
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-        <div>
-          <Title level={4} style={{ margin: 0 }}>Agent Models</Title>
-          <Text style={{ color: '#8b949e' }}>
-            Configure which LLM model each agent uses. Changes take effect on the next workflow run.
-          </Text>
-        </div>
-        <Space>
-          {canConfigure && (
-            <Button icon={<CloudServerOutlined />} onClick={() => navigate('/providers')}>
-              Manage providers & models
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+      <PageHeader
+        title="Agent Models"
+        subTitle="Configure which LLM model each agent uses. Changes take effect on the next workflow run."
+        extra={
+          <>
+            {canConfigure && (
+              <Button icon={<CloudServerOutlined />} onClick={() => navigate('/providers')}>
+                Manage providers & models
+              </Button>
+            )}
+            <Button icon={<ReloadOutlined />} onClick={fetchData} loading={loading}>
+              Refresh
             </Button>
-          )}
-          <Button icon={<ReloadOutlined />} onClick={fetchData}>
-            Refresh
-          </Button>
-        </Space>
-      </div>
+          </>
+        }
+      />
 
-      <Card>
-        <Table
-          dataSource={agents}
-          columns={columns}
-          rowKey="role"
-          pagination={false}
-        />
+      <Card styles={{ body: { padding: 0 } }}>
+        {loading && agents.length === 0 ? (
+          <Skeleton active paragraph={{ rows: 6 }} style={{ padding: token.paddingLG }} />
+        ) : (
+          <Table dataSource={agents} columns={columns} rowKey="role" pagination={false} loading={loading} />
+        )}
       </Card>
     </div>
   );

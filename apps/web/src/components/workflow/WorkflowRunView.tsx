@@ -1,25 +1,29 @@
 import React, { useMemo, useState } from 'react';
-import { Breadcrumb, Button, Empty, List, Popconfirm, Skeleton, Space, Tag, Tooltip, Typography, message } from 'antd';
+import { App, Breadcrumb, Button, Card, Empty, Flex, Popconfirm, Skeleton, Space, Table, Tag, Tooltip, Typography, theme } from 'antd';
 import { ApartmentOutlined, CaretDownOutlined, CaretRightOutlined, HistoryOutlined, PauseCircleOutlined, PlayCircleOutlined, RollbackOutlined } from '@ant-design/icons';
 import { usePauseRun, useResumeRun, useRollbackRun, useRunSnapshots, useWorkflowRun } from '../../lib/api/hooks/workflows';
 import { usePendingApprovals } from '../../lib/api/hooks/approvals';
 import { apiErrorMessage } from '../../lib/api/errors';
 import { Permission } from '@ai-corp/shared-types';
 import { usePermission } from '../../lib/permissions';
+import { roleColor, statusColor } from '../../theme/palette';
 import { ganttLayout, overlappingKeys, pathTo, timelineRows, WorkflowRunTree } from './runTree';
 
 const { Text } = Typography;
 
-const INK = { primary: '#e6edf3', secondary: '#8b949e', muted: '#484f58', grid: '#21262d' };
-const STATUS_COLORS: Record<string, string> = {
-  completed: '#52c41a',
-  failed: '#ff4d4f',
-  running: '#1677ff',
-  paused: '#faad14',
-  pending: '#faad14',
-  cancelled: '#8b949e',
-};
-const box: React.CSSProperties = { background: '#0d1117', border: '1px solid #30363d', borderRadius: 8, padding: 12 };
+type Token = ReturnType<typeof theme.useToken>['token'];
+
+/** Bar colour of a step status, from the theme's semantic tokens */
+function barColor(status: string, token: Token): string {
+  switch (status) {
+    case 'completed': return token.colorSuccess;
+    case 'failed': return token.colorError;
+    case 'running': return token.colorPrimary;
+    case 'paused':
+    case 'pending': return token.colorWarning;
+    default: return token.colorTextQuaternary;
+  }
+}
 
 const fmtDuration = (ms: number) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60000)} min`);
 
@@ -28,9 +32,11 @@ const RunTimeline: React.FC<{ tree: WorkflowRunTree; onOpenRun: (runId: string) 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const rows = useMemo(() => ganttLayout(timelineRows(tree, collapsed)), [tree, collapsed]);
   const parallel = useMemo(() => overlappingKeys(rows), [rows]);
+  const { token } = theme.useToken();
+  const subColor = token.purple5 ?? '#9254de';
 
   if (rows.length === 0) {
-    return <Empty description={<Text style={{ color: INK.secondary }}>No steps recorded yet.</Text>} />;
+    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No steps recorded yet." />;
   }
   const toggle = (key: string) =>
     setCollapsed(prev => {
@@ -41,7 +47,7 @@ const RunTimeline: React.FC<{ tree: WorkflowRunTree; onOpenRun: (runId: string) 
     });
 
   return (
-    <div style={box} role="table" aria-label="Execution timeline">
+    <Card size="small" title="Execution timeline" role="table" aria-label="Execution timeline">
       {rows.map(row => (
         <div key={row.key} role="row" style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 26 }}>
           <div role="cell" style={{ width: 260, flexShrink: 0, paddingLeft: row.depth * 18, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
@@ -52,21 +58,21 @@ const RunTimeline: React.FC<{ tree: WorkflowRunTree; onOpenRun: (runId: string) 
                 aria-label={collapsed.has(row.key) ? `Expand ${row.label}` : `Collapse ${row.label}`}
                 icon={collapsed.has(row.key) ? <CaretRightOutlined /> : <CaretDownOutlined />}
                 onClick={() => toggle(row.key)}
-                style={{ color: INK.secondary, width: 20, minWidth: 20, padding: 0 }}
+                style={{ width: 20, minWidth: 20, padding: 0 }}
               />
             ) : (
               <span style={{ width: 20 }} />
             )}
-            {row.kind === 'sub_workflow' && <ApartmentOutlined style={{ color: '#b37feb' }} />}
-            <Text style={{ color: INK.primary, fontSize: 12, whiteSpace: 'nowrap' }} ellipsis>{row.label}</Text>
-            {row.agentRole && <Tag style={{ fontSize: 10, lineHeight: '16px', marginInlineEnd: 0 }}>{row.agentRole}</Tag>}
+            {row.kind === 'sub_workflow' && <ApartmentOutlined style={{ color: subColor }} />}
+            <Text style={{ fontSize: token.fontSizeSM, whiteSpace: 'nowrap' }} ellipsis>{row.label}</Text>
+            {row.agentRole && <Tag color={roleColor(row.agentRole)} style={{ fontSize: 10, lineHeight: '16px', marginInlineEnd: 0 }}>{row.agentRole}</Tag>}
             {row.kind === 'sub_workflow' && row.runId && (
               <Button type="link" size="small" style={{ padding: 0, fontSize: 11 }} onClick={() => onOpenRun(row.runId!)}>
                 open
               </Button>
             )}
           </div>
-          <div role="cell" style={{ position: 'relative', flex: 1, height: 14, background: INK.grid, borderRadius: 3 }}>
+          <div role="cell" style={{ position: 'relative', flex: 1, height: 14, background: token.colorFillSecondary, borderRadius: 4 }}>
             <Tooltip title={`${row.label}: ${row.status}, ${fmtDuration(row.end - row.start)}${parallel.has(row.key) ? ' (ran in parallel)' : ''}`}>
               <div
                 style={{
@@ -75,21 +81,22 @@ const RunTimeline: React.FC<{ tree: WorkflowRunTree; onOpenRun: (runId: string) 
                   width: `${row.width}%`,
                   top: 0,
                   bottom: 0,
-                  borderRadius: 3,
-                  background: row.kind === 'sub_workflow' ? '#b37feb55' : STATUS_COLORS[row.status] || INK.secondary,
-                  border: row.kind === 'sub_workflow' ? '1px solid #b37feb' : 'none',
-                  outline: parallel.has(row.key) ? '1px dashed #e6edf3' : 'none',
+                  borderRadius: 4,
+                  minWidth: 4,
+                  background: row.kind === 'sub_workflow' ? `${subColor}55` : barColor(row.status, token),
+                  border: row.kind === 'sub_workflow' ? `1px solid ${subColor}` : 'none',
+                  outline: parallel.has(row.key) ? `1px dashed ${token.colorText}` : 'none',
                 }}
               />
             </Tooltip>
           </div>
-          <Text role="cell" style={{ width: 64, textAlign: 'right', color: INK.secondary, fontSize: 11 }}>{fmtDuration(row.end - row.start)}</Text>
+          <Text role="cell" type="secondary" style={{ width: 64, textAlign: 'right', fontSize: token.fontSizeSM }}>{fmtDuration(row.end - row.start)}</Text>
         </div>
       ))}
-      <Text style={{ color: INK.muted, fontSize: 11, display: 'block', marginTop: 8 }}>
+      <Text type="secondary" style={{ fontSize: token.fontSizeSM, display: 'block', marginTop: token.marginXS }}>
         Purple bars are sub-workflows; a dashed outline marks steps that ran in parallel.
       </Text>
-    </div>
+    </Card>
   );
 };
 
@@ -105,6 +112,7 @@ const SnapshotPanel: React.FC<{ runId: string; projectId: string; status: string
   // A run paused at an approval continues when the approval is answered; Resume would ask again
   const { data: approvals = [] } = usePendingApprovals(projectId);
   const awaitingApproval = approvals.some(a => a.workflowRunId === runId);
+  const { message } = App.useApp();
 
   const doRollback = async (snapshotId: string) => {
     try {
@@ -131,45 +139,58 @@ const SnapshotPanel: React.FC<{ runId: string; projectId: string; status: string
     }
   };
 
+  const controls = (
+    <>
+      {canControl && status === 'running' && (
+        <Button size="small" icon={<PauseCircleOutlined />} loading={pause.isPending} onClick={doPause}>
+          Pause
+        </Button>
+      )}
+      {canControl && status === 'paused' && (awaitingApproval ? (
+        <Tooltip title="This run waits for an approval: approve or reject it to continue">
+          <Button size="small" icon={<PlayCircleOutlined />} disabled>Resume</Button>
+        </Tooltip>
+      ) : (
+        <Button size="small" type="primary" icon={<PlayCircleOutlined />} loading={resume.isPending} onClick={doResume}>
+          Resume
+        </Button>
+      ))}
+    </>
+  );
+
   return (
-    <div style={box}>
-      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }}>
+    <Card
+      size="small"
+      title={
         <Space>
-          <HistoryOutlined style={{ color: INK.secondary }} />
-          <Text style={{ color: INK.primary }}>Snapshots</Text>
-          <Text style={{ color: INK.secondary, fontSize: 12 }}>
+          <HistoryOutlined />
+          Snapshots
+          <Text type="secondary" style={{ fontSize: 12, fontWeight: 'normal' }}>
             {canRollback ? 'roll back to the state before a node ran' : 'rollback is available when the run is paused or failed'}
           </Text>
         </Space>
-        {canControl && status === 'running' && (
-          <Button size="small" icon={<PauseCircleOutlined />} loading={pause.isPending} onClick={doPause}>
-            Pause
-          </Button>
-        )}
-        {canControl && status === 'paused' && (awaitingApproval ? (
-          <Tooltip title="This run waits for an approval: approve or reject it to continue">
-            <Button size="small" icon={<PlayCircleOutlined />} disabled>Resume</Button>
-          </Tooltip>
-        ) : (
-          <Button size="small" icon={<PlayCircleOutlined />} loading={resume.isPending} onClick={doResume}>
-            Resume
-          </Button>
-        ))}
-      </Space>
+      }
+      extra={controls}
+    >
       {isLoading ? (
         <Skeleton active paragraph={{ rows: 2 }} />
-      ) : snapshots.length === 0 ? (
-        <Text style={{ color: INK.secondary, fontSize: 12 }}>No snapshots yet.</Text>
       ) : (
-        <List
+        <Table
           size="small"
+          rowKey="id"
+          pagination={snapshots.length > 8 ? { pageSize: 8, size: 'small' } : false}
           dataSource={[...snapshots].reverse()}
-          renderItem={snapshot => (
-            <List.Item
-              style={{ borderBlockEnd: '1px solid #21262d', padding: '4px 0' }}
-              actions={[
+          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No snapshots yet." /> }}
+          columns={[
+            { title: '#', dataIndex: 'sequence', width: 56, render: (v: number) => <Text type="secondary">#{v}</Text> },
+            { title: 'Before node', dataIndex: 'nodeId', render: (v: string) => <Tag>{v}</Tag> },
+            { title: 'Taken at', dataIndex: 'createdAt', render: (v: string) => <Text type="secondary">{new Date(v).toLocaleTimeString()}</Text> },
+            {
+              title: '',
+              key: 'action',
+              align: 'right' as const,
+              render: (_: unknown, snapshot: any) => (
                 <Popconfirm
-                  key="rollback"
                   title={`Roll back to before "${snapshot.nodeId}"?`}
                   description="The run is paused there with the variables it had then. Later snapshots are discarded."
                   onConfirm={() => doRollback(snapshot.id)}
@@ -178,19 +199,13 @@ const SnapshotPanel: React.FC<{ runId: string; projectId: string; status: string
                   <Button size="small" type="text" icon={<RollbackOutlined />} disabled={!canRollback} loading={rollback.isPending}>
                     Roll back
                   </Button>
-                </Popconfirm>,
-              ]}
-            >
-              <Space>
-                <Text style={{ color: INK.secondary, fontSize: 12, width: 28, display: 'inline-block' }}>#{snapshot.sequence}</Text>
-                <Tag>{snapshot.nodeId}</Tag>
-                <Text style={{ color: INK.secondary, fontSize: 12 }}>{new Date(snapshot.createdAt).toLocaleTimeString()}</Text>
-              </Space>
-            </List.Item>
-          )}
+                </Popconfirm>
+              ),
+            },
+          ]}
         />
       )}
-    </div>
+    </Card>
   );
 };
 
@@ -208,25 +223,25 @@ export const WorkflowRunView: React.FC<{ runId: string; projectId: string }> = (
   const focus = path[path.length - 1] || tree;
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+    <Flex vertical gap={12}>
       <Space wrap>
         <Breadcrumb
           items={path.map((node, i) => ({
             title: i === path.length - 1 ? (
-              <Text style={{ color: INK.primary }}>{node.definition?.name || node.run.workflowDefId}</Text>
+              <Text strong>{node.definition?.name || node.run.workflowDefId}</Text>
             ) : (
               <a onClick={() => setFocusId(i === 0 ? null : node.run.id)}>{node.definition?.name || node.run.workflowDefId}</a>
             ),
           }))}
         />
-        <Tag color="purple">{focus.run.workflowDefId}@{focus.run.workflowDefVersion || 'latest'}</Tag>
-        <Tag color={STATUS_COLORS[focus.run.status]}>{focus.run.status}</Tag>
+        <Tag color="purple" variant="outlined">{focus.run.workflowDefId}@{focus.run.workflowDefVersion || 'latest'}</Tag>
+        <Tag color={statusColor(focus.run.status)}>{focus.run.status}</Tag>
         {focus.run.currentNodeId && focus.run.status !== 'completed' && (
-          <Text style={{ color: INK.secondary, fontSize: 12 }}>at {focus.run.currentNodeId}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>at {focus.run.currentNodeId}</Text>
         )}
       </Space>
       <RunTimeline tree={focus} onOpenRun={setFocusId} />
       {!focus.run.parentRunId && <SnapshotPanel runId={focus.run.id} projectId={projectId} status={focus.run.status} />}
-    </Space>
+    </Flex>
   );
 };

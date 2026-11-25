@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Typography, Space, Card, Badge, Row, Col, Tag, Flex, Select } from 'antd';
+import { Badge, Button, Card, Col, Flex, Row, Select, Tag, Tooltip, Typography, theme } from 'antd';
 import { TeamOutlined, MessageOutlined, ClearOutlined } from '@ant-design/icons';
 import { WebSocketEventType, AgentThinkingEvent, AgentActionEvent, AgentMessageEvent, ApprovalRequiredEvent, AgentRole } from '@ai-corp/shared-types';
 import { useWebsocketStore } from '../stores/websocketStore';
@@ -9,8 +9,9 @@ import { useProjects } from '../lib/api/hooks/projects';
 import socketClient from '../lib/websocket/socket-client';
 import { AgentStatusCard, AgentStatus } from '../components/virtual-office/AgentStatusCard';
 import { MeetingRoom } from '../components/virtual-office/MeetingRoom';
+import { PageHeader } from '../components/common/PageHeader';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const AGENT_ROLES = [
   AgentRole.CEO,
@@ -25,6 +26,7 @@ const AGENT_ROLES = [
 
 export const VirtualOffice: React.FC = () => {
   const { status } = useWebsocketStore();
+  const { token } = theme.useToken();
   const [agentStatuses, setAgentStatuses] = useState<Record<string, AgentStatus>>({});
   const [agentActivities, setAgentActivities] = useState<Record<string, string>>({});
   const messages = useMeetingStore((s) => s.messages);
@@ -148,65 +150,38 @@ export const VirtualOffice: React.FC = () => {
     };
   }, []);
 
+  const panelHeight = 'calc(100vh - 210px)';
+
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-      {/* Header */}
-      <Flex justify="space-between" align="center" style={{ width: '100%', marginBottom: 24 }}>
-        <div>
-          <Title level={2} style={{ color: '#e6edf3', margin: 0 }}>
-            Virtual Office
-          </Title>
-          <Text style={{ color: '#8b949e' }}>
-            Watch your AI agents collaborate in real-time.
-          </Text>
-        </div>
-        <Space size={16}>
-        <Select
-          value={projectFilter}
-          onChange={setProjectFilter}
-          style={{ width: 260 }}
-          showSearch
-          optionFilterProp="label"
-          options={[
-            { value: 'all', label: 'All active projects' },
-            ...projects.map(p => ({ value: p.id, label: p.name })),
-          ]}
-        />
-        <Badge
-          color={status === 'connected' ? '#52c41a' : '#ff4d4f'}
-          text={
-            <Text style={{ color: '#8b949e', textTransform: 'capitalize' }}>
-              {status === 'connected' ? 'Live' : status}
-            </Text>
-          }
-        />
-        </Space>
-      </Flex>
+      <PageHeader
+        title="Virtual Office"
+        subTitle="Watch your AI agents collaborate in real-time."
+        tags={<Badge status={status === 'connected' ? 'processing' : 'error'} text={<Text type="secondary" style={{ textTransform: 'capitalize' }}>{status === 'connected' ? 'Live' : status}</Text>} />}
+        extra={
+          <Select
+            value={projectFilter}
+            onChange={setProjectFilter}
+            style={{ width: 280 }}
+            showSearch={{ optionFilterProp: 'label' }}
+            prefix="Project"
+            options={[
+              { value: 'all', label: 'All active projects' },
+              ...projects.map(p => ({ value: p.id, label: p.name })),
+            ]}
+          />
+        }
+      />
 
-      {/* Two-column layout */}
       <Row gutter={[16, 16]}>
-        {/* Left: Agent Grid */}
         <Col xs={24} lg={8}>
           <Card
-            title={
-              <Space>
-                <TeamOutlined style={{ color: '#1677ff' }} />
-                <Text style={{ color: '#e6edf3' }}>Agent Status</Text>
-              </Space>
-            }
-            style={{
-              background: '#0d1117',
-              border: '1px solid #30363d',
-              borderRadius: 12,
-              height: 'calc(100vh - 200px)',
-              overflow: 'hidden',
-            }}
-            styles={{
-              header: { background: '#161b22', borderBottom: '1px solid #30363d' },
-              body: { padding: 12, overflowY: 'auto', height: 'calc(100% - 56px)' },
-            }}
+            title={<Flex gap={token.marginXS} align="center"><TeamOutlined style={{ color: token.colorPrimary }} />Agent Status</Flex>}
+            extra={<Tag variant="filled">{AGENT_ROLES.length} agents</Tag>}
+            style={{ height: panelHeight, minHeight: 480, display: 'flex', flexDirection: 'column' }}
+            styles={{ body: { padding: token.paddingSM, overflowY: 'auto', flex: 1 } }}
           >
-            <Space direction="vertical" size={8} style={{ width: '100%' }}>
+            <Flex vertical gap={token.marginXS}>
               {AGENT_ROLES.map((role) => (
                 <AgentStatusCard
                   key={role}
@@ -216,42 +191,28 @@ export const VirtualOffice: React.FC = () => {
                   lastActivity={agentActivities[role]}
                 />
               ))}
-            </Space>
+            </Flex>
           </Card>
         </Col>
 
-        {/* Right: Meeting Room */}
         <Col xs={24} lg={16}>
           <Card
             title={
-              <Space>
-                <MessageOutlined style={{ color: '#52c41a' }} />
-                <Text style={{ color: '#e6edf3' }}>Meeting Room</Text>
-                <Tag style={{ background: '#21262d', border: 'none', color: '#8b949e', fontSize: 11 }}>
-                  {visibleMessages.length} messages
-                </Tag>
-              </Space>
+              <Flex gap={token.marginXS} align="center">
+                <MessageOutlined style={{ color: token.colorSuccess }} />
+                Meeting Room
+                <Tag variant="filled" style={{ marginInlineStart: token.marginXXS }}>{visibleMessages.length} messages</Tag>
+              </Flex>
             }
             extra={
               messages.length > 0 ? (
-                <ClearOutlined
-                  style={{ color: '#8b949e', cursor: 'pointer' }}
-                  onClick={clearMessages}
-                  title="Clear messages"
-                />
+                <Tooltip title="Clear messages">
+                  <Button type="text" size="small" icon={<ClearOutlined />} onClick={clearMessages} aria-label="Clear messages" />
+                </Tooltip>
               ) : null
             }
-            style={{
-              background: '#0d1117',
-              border: '1px solid #30363d',
-              borderRadius: 12,
-              height: 'calc(100vh - 200px)',
-              overflow: 'hidden',
-            }}
-            styles={{
-              header: { background: '#161b22', borderBottom: '1px solid #30363d' },
-              body: { padding: 16, overflow: 'hidden', height: 'calc(100% - 56px)', display: 'flex', flexDirection: 'column' },
-            }}
+            style={{ height: panelHeight, minHeight: 480, display: 'flex', flexDirection: 'column' }}
+            styles={{ body: { padding: token.padding, overflow: 'hidden', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } }}
           >
             <MeetingRoom messages={visibleMessages} connected={status === 'connected'} />
           </Card>

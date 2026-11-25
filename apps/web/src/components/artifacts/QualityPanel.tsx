@@ -1,28 +1,26 @@
 import React from 'react';
-import { Alert, Card, Col, List, Progress, Row, Space, Statistic, Tag, Typography } from 'antd';
-import { CheckCircleOutlined, CloseCircleOutlined, WarningOutlined } from '@ant-design/icons';
+import { Alert, Card, Col, Collapse, Flex, Progress, Row, Space, Statistic, Steps, Tag, Typography, theme } from 'antd';
+import { CheckCircleOutlined, CloseCircleOutlined, SafetyCertificateOutlined, WarningOutlined } from '@ant-design/icons';
 import { OoadProjectMetrics } from '../../lib/api/hooks/artifacts';
 import { describeCheck, GateView, WarningView } from './qualityGate';
 
 const { Text } = Typography;
-const card: React.CSSProperties = { background: '#161b22', border: '1px solid #30363d' };
-const label = (text: string) => <span style={{ color: '#8b949e' }}>{text}</span>;
 
 /** ooadMetadata summary: what the BA, Architect and QC produced */
 export const OoadSummary: React.FC<{ metrics: OoadProjectMetrics | null | undefined }> = ({ metrics }) => {
   if (!metrics) return null;
   const trace = metrics.traceability;
   return (
-    <Card size="small" style={card} title={<Text style={{ color: '#e6edf3' }}>OOAD summary</Text>}>
+    <Card size="small" title={<Space><SafetyCertificateOutlined />OOAD summary</Space>}>
       <Row gutter={[16, 16]}>
-        <Col xs={12} md={4}><Statistic title={label('Use cases')} value={metrics.useCaseCount} valueStyle={{ color: '#e6edf3' }} /></Col>
-        <Col xs={12} md={4}><Statistic title={label('Entities')} value={metrics.entityCount} valueStyle={{ color: '#e6edf3' }} /></Col>
-        <Col xs={12} md={4}><Statistic title={label('Patterns')} value={metrics.patternCount} valueStyle={{ color: '#e6edf3' }} /></Col>
-        <Col xs={12} md={4}><Statistic title={label('Gate pass rate')} value={metrics.gatePassRate} suffix="%" valueStyle={{ color: '#e6edf3' }} /></Col>
+        <Col xs={12} md={4}><Statistic title="Use cases" value={metrics.useCaseCount} /></Col>
+        <Col xs={12} md={4}><Statistic title="Entities" value={metrics.entityCount} /></Col>
+        <Col xs={12} md={4}><Statistic title="Patterns" value={metrics.patternCount} /></Col>
+        <Col xs={12} md={4}><Statistic title="Gate pass rate" value={metrics.gatePassRate} suffix="%" /></Col>
         <Col xs={24} md={8}>
-          <Text style={{ color: '#8b949e', fontSize: 14 }}>Use case test coverage</Text>
+          <Text type="secondary">Use case test coverage</Text>
           {metrics.testCoverage === null ? (
-            <div><Text style={{ color: '#8b949e' }}>Not verified yet</Text></div>
+            <div><Text type="secondary">Not verified yet</Text></div>
           ) : (
             <Progress
               percent={metrics.testCoverage}
@@ -45,41 +43,41 @@ export const OoadSummary: React.FC<{ metrics: OoadProjectMetrics | null | undefi
 };
 
 export const QualityGateList: React.FC<{ gates: GateView[] }> = ({ gates }) => {
+  const { token } = theme.useToken();
   if (gates.length === 0) return null;
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
-      {gates.map(gate => (
-        <Card
-          key={`${gate.gateId}-${gate.at}`}
-          size="small"
-          style={card}
-          title={
-            <Space wrap>
-              {gate.passed ? <CheckCircleOutlined style={{ color: '#52c41a' }} /> : <CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
-              <Text style={{ color: '#e6edf3' }}>Quality gate: {gate.gateId}</Text>
-              <Tag color={gate.passed ? 'green' : 'red'}>{gate.passed ? 'passed' : 'failed'}</Tag>
-              <Tag>{gate.score}%</Tag>
-              {gate.live && <Tag color="blue">live</Tag>}
-              <Text style={{ color: '#8b949e', fontSize: 12 }}>{new Date(gate.at).toLocaleString()}</Text>
-            </Space>
-          }
-        >
-          <List
+    <Collapse
+      defaultActiveKey={gates.filter(g => !g.passed).map(g => `${g.gateId}-${g.at}`)}
+      items={gates.map(gate => ({
+        key: `${gate.gateId}-${gate.at}`,
+        label: (
+          <Space wrap>
+            {gate.passed ? <CheckCircleOutlined style={{ color: token.colorSuccess }} /> : <CloseCircleOutlined style={{ color: token.colorError }} />}
+            <Text strong>Quality gate: {gate.gateId}</Text>
+            <Tag color={gate.passed ? 'success' : 'error'}>{gate.passed ? 'passed' : 'failed'}</Tag>
+            {gate.live && <Tag color="processing">live</Tag>}
+          </Space>
+        ),
+        extra: (
+          <Flex gap={token.marginSM} align="center">
+            <Progress type="circle" size={28} percent={gate.score} status={gate.passed ? 'success' : 'exception'} format={() => ''} />
+            <Text type="secondary" style={{ fontSize: 12 }}>{gate.score}% · {new Date(gate.at).toLocaleString()}</Text>
+          </Flex>
+        ),
+        children: (
+          <Steps
+            orientation="vertical"
             size="small"
-            dataSource={gate.checklist}
-            renderItem={item => (
-              <List.Item style={{ borderColor: '#21262d', padding: '4px 0' }}>
-                <Space>
-                  {item.passed ? <CheckCircleOutlined style={{ color: '#52c41a' }} /> : <CloseCircleOutlined style={{ color: '#ff4d4f' }} />}
-                  <Text style={{ color: '#c9d1d9' }}>{item.name}</Text>
-                  <Text style={{ color: '#8b949e', fontSize: 12 }}>{describeCheck(item)}</Text>
-                </Space>
-              </List.Item>
-            )}
+            items={gate.checklist.map(item => ({
+              title: item.name,
+              content: describeCheck(item),
+              status: item.passed ? 'finish' : 'error',
+              icon: item.passed ? <CheckCircleOutlined /> : <CloseCircleOutlined />,
+            }))}
           />
-        </Card>
-      ))}
-    </Space>
+        ),
+      }))}
+    />
   );
 };
 
@@ -91,12 +89,11 @@ export const QualityWarnings: React.FC<{ warnings: WarningView[] }> = ({ warning
         type={w.severity === 'error' ? 'error' : w.severity === 'info' ? 'info' : 'warning'}
         showIcon
         icon={<WarningOutlined />}
-        message={w.message}
+        title={w.message}
         description={[
           w.failingUseCases?.length ? `Failing: ${w.failingUseCases.join(', ')}` : '',
           w.missingUseCases?.length ? `Missing tests: ${w.missingUseCases.join(', ')}` : '',
         ].filter(Boolean).join(' · ') || undefined}
-        style={{ background: '#161b22', border: '1px solid #faad1430' }}
       />
     ))}
   </>

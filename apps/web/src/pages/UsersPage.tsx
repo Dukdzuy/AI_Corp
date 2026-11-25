@@ -1,12 +1,13 @@
 import React from 'react';
-import { Card, Table, Select, Switch, Tag, Typography, Space, message, Tooltip } from 'antd';
-import { CheckOutlined, TeamOutlined } from '@ant-design/icons';
+import { App, Avatar, Card, Flex, Progress, Select, Switch, Table, Tabs, Tag, Tooltip, Typography, theme } from 'antd';
+import { CheckCircleFilled, MinusOutlined, SafetyOutlined, TeamOutlined } from '@ant-design/icons';
 import { Permission } from '@ai-corp/shared-types';
 import { ManagedUser, useChangeRole, useRoleMatrix, useSetUserActive, useUsers } from '../lib/api/hooks/users';
 import { PERMISSION_LABELS, ROLE_LABELS } from '../lib/permissions';
 import { useAuthStore } from '../stores/authStore';
+import { PageHeader } from '../components/common/PageHeader';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const errorText = (e: any) => e?.response?.data?.message || e?.message || 'Request failed';
 
@@ -20,16 +21,21 @@ export const UsersPage: React.FC = () => {
   const { data: matrix } = useRoleMatrix();
   const changeRole = useChangeRole();
   const setActive = useSetUserActive();
+  const { message } = App.useApp();
+  const { token } = theme.useToken();
 
   const columns = [
     {
       title: 'User',
       key: 'user',
       render: (_: unknown, u: ManagedUser) => (
-        <Space direction="vertical" size={0}>
-          <Text strong>{u.name}{u.id === me?.id && <Tag style={{ marginLeft: 8 }}>you</Tag>}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>{u.email}</Text>
-        </Space>
+        <Flex gap={token.marginSM} align="center">
+          <Avatar style={{ background: token.colorPrimary, opacity: u.isActive ? 1 : 0.4 }}>{u.name?.[0]?.toUpperCase()}</Avatar>
+          <div>
+            <Text strong>{u.name}{u.id === me?.id && <Tag color="blue" style={{ marginLeft: 8 }}>you</Tag>}</Text>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block' }}>{u.email}</Text>
+          </div>
+        </Flex>
       ),
     },
     {
@@ -73,7 +79,15 @@ export const UsersPage: React.FC = () => {
     {
       title: 'Permissions',
       key: 'permissions',
-      render: (_: unknown, u: ManagedUser) => <Text type="secondary">{u.permissions.length} of {matrix?.permissions.length ?? 13}</Text>,
+      width: 180,
+      render: (_: unknown, u: ManagedUser) => {
+        const total = matrix?.permissions.length ?? 13;
+        return (
+          <Tooltip title={`${u.permissions.length} of ${total} permissions`}>
+            <Progress percent={Math.round((u.permissions.length / total) * 100)} size="small" format={() => `${u.permissions.length}/${total}`} />
+          </Tooltip>
+        );
+      },
     },
     { title: 'Joined', dataIndex: 'createdAt', key: 'createdAt', width: 130, render: (d: string) => new Date(d).toLocaleDateString() },
   ];
@@ -86,10 +100,10 @@ export const UsersPage: React.FC = () => {
       dataIndex: 'permission',
       key: 'permission',
       render: (p: Permission) => (
-        <Space direction="vertical" size={0}>
+        <Flex vertical>
           <Text>{PERMISSION_LABELS[p] ?? p}</Text>
-          <Text type="secondary" style={{ fontSize: 11, fontFamily: 'monospace' }}>{p}</Text>
-        </Space>
+          <Text type="secondary" code style={{ fontSize: 11, alignSelf: 'start' }}>{p}</Text>
+        </Flex>
       ),
     },
     ...roles.map(r => ({
@@ -98,23 +112,42 @@ export const UsersPage: React.FC = () => {
       align: 'center' as const,
       width: 140,
       render: (_: unknown, row: { permission: string }) =>
-        r.permissions.includes(row.permission) ? <CheckOutlined style={{ color: '#52c41a' }} /> : <Text type="secondary">–</Text>,
+        r.permissions.includes(row.permission) ? <CheckCircleFilled style={{ color: token.colorSuccess }} /> : <MinusOutlined style={{ color: token.colorTextQuaternary }} />,
     })),
   ];
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Title level={4} style={{ margin: 0 }}><TeamOutlined /> Users &amp; Roles</Title>
-      <Card title="Users" size="small">
-        <Table rowKey="id" dataSource={users} columns={columns} loading={isLoading} pagination={false} size="middle" />
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+      <PageHeader
+        title="Users & Roles"
+        subTitle="Assign roles, revoke access, and review what each role may do."
+        avatar={<Avatar shape="square" size={44} icon={<TeamOutlined />} style={{ background: token.colorPrimaryBg, color: token.colorPrimary }} />}
+      />
+      <Card styles={{ body: { paddingTop: 0 } }}>
+        <Tabs
+          items={[
+            {
+              key: 'users',
+              icon: <TeamOutlined />,
+              label: `Users (${users.length})`,
+              children: <Table rowKey="id" dataSource={users} columns={columns} loading={isLoading} pagination={false} size="middle" />,
+            },
+            {
+              key: 'matrix',
+              icon: <SafetyOutlined />,
+              label: 'Permission matrix',
+              children: (
+                <>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: token.marginSM }}>
+                    Enforced by the API on every request; project changes also require being the owner (or admin)
+                  </Text>
+                  <Table rowKey="key" dataSource={matrixRows} columns={matrixColumns} pagination={false} size="small" bordered sticky />
+                </>
+              ),
+            },
+          ]}
+        />
       </Card>
-      <Card
-        title="Permission matrix"
-        size="small"
-        extra={<Text type="secondary">Enforced by the API on every request; project changes also require being the owner (or admin)</Text>}
-      >
-        <Table rowKey="key" dataSource={matrixRows} columns={matrixColumns} pagination={false} size="small" />
-      </Card>
-    </Space>
+    </div>
   );
 };

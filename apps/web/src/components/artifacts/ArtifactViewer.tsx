@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Empty, Segmented, Space, Spin, Tag, Typography } from 'antd';
+import { Alert, Empty, Flex, Image, Segmented, Skeleton, Space, Tag, Typography, theme } from 'antd';
+import { FileOutlined } from '@ant-design/icons';
 import { ArtifactContent } from '../../lib/api/hooks/artifacts';
 import { MarkdownView } from './MarkdownView';
 import { plantUmlSvgUrl } from './plantuml';
@@ -7,31 +8,36 @@ import { formatSize } from './fileTree';
 
 const { Text } = Typography;
 
-const preStyle: React.CSSProperties = {
-  background: '#0d1117',
-  border: '1px solid #30363d',
-  borderRadius: 6,
-  padding: 12,
-  fontSize: 12,
-  color: '#c9d1d9',
-  overflow: 'auto',
-  maxHeight: 640,
-  margin: 0,
-  whiteSpace: 'pre',
-};
-
+/** Source with line numbers on the theme's code colours, with a copy button */
 const CodeBlock: React.FC<{ text: string }> = ({ text }) => {
+  const { token } = theme.useToken();
   const lines = text.split('\n');
   const width = String(lines.length).length;
   return (
-    <pre style={preStyle}>
-      {lines.map((line, i) => (
-        <div key={i}>
-          <span style={{ color: '#484f58', userSelect: 'none', display: 'inline-block', width: `${width + 1}ch` }}>{i + 1}</span>
-          {line}
-        </div>
-      ))}
-    </pre>
+    <div style={{ position: 'relative' }}>
+      <Text copyable={{ text }} style={{ position: 'absolute', top: 6, right: 10, zIndex: 1 }} />
+      <pre
+        style={{
+          background: token.colorFillQuaternary,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          borderRadius: token.borderRadius,
+          padding: token.paddingSM,
+          fontSize: token.fontSizeSM,
+          fontFamily: token.fontFamilyCode,
+          overflow: 'auto',
+          maxHeight: 640,
+          margin: 0,
+          whiteSpace: 'pre',
+        }}
+      >
+        {lines.map((line, i) => (
+          <div key={i}>
+            <span style={{ color: token.colorTextQuaternary, userSelect: 'none', display: 'inline-block', width: `${width + 1}ch` }}>{i + 1}</span>
+            {line}
+          </div>
+        ))}
+      </pre>
+    </div>
   );
 };
 
@@ -52,15 +58,15 @@ const PlantUmlView: React.FC<{ source: string }> = ({ source }) => {
 
   if (url === null) {
     return (
-      <Space direction="vertical" style={{ width: '100%' }}>
-        <Text style={{ color: '#8b949e', fontSize: 12 }}>Diagram rendering is turned off (VITE_PLANTUML_SERVER is empty).</Text>
+      <Flex vertical gap={8}>
+        <Alert type="info" showIcon title="Diagram rendering is turned off (VITE_PLANTUML_SERVER is empty)." />
         <CodeBlock text={source} />
-      </Space>
+      </Flex>
     );
   }
 
   return (
-    <Space direction="vertical" style={{ width: '100%' }}>
+    <Flex vertical gap={8}>
       <Segmented
         size="small"
         value={mode}
@@ -70,31 +76,32 @@ const PlantUmlView: React.FC<{ source: string }> = ({ source }) => {
       {mode === 'source' ? (
         <CodeBlock text={source} />
       ) : url === undefined ? (
-        <Spin />
+        <Skeleton.Image active style={{ width: 320, height: 200 }} />
       ) : failed ? (
-        <Alert type="warning" showIcon message="The PlantUML server could not render this diagram" description="Check the source for syntax errors or the VITE_PLANTUML_SERVER setting." />
+        <Alert type="warning" showIcon title="The PlantUML server could not render this diagram" description="Check the source for syntax errors or the VITE_PLANTUML_SERVER setting." />
       ) : (
         <div style={{ background: '#ffffff', borderRadius: 6, padding: 12, overflow: 'auto', maxHeight: 720, textAlign: 'center' }}>
-          <img src={url} alt="PlantUML diagram" style={{ maxWidth: '100%' }} onError={() => setFailed(true)} />
+          {/* Ant Design Image: click to open the preview with zoom and rotate */}
+          <Image src={url} alt="PlantUML diagram" style={{ maxWidth: '100%' }} onError={() => setFailed(true)} />
         </div>
       )}
-    </Space>
+    </Flex>
   );
 };
 
 export const ArtifactViewer: React.FC<{ file: ArtifactContent | undefined; loading: boolean; error?: unknown }> = ({ file, loading, error }) => {
-  if (loading) return <Spin />;
+  if (loading) return <Skeleton active paragraph={{ rows: 8 }} />;
   if (error) {
     const status = (error as any)?.response?.status;
     return (
       <Alert
         type="error"
         showIcon
-        message={status === 413 ? 'This file is too large to preview; download the project archive instead.' : 'Could not load this file.'}
+        title={status === 413 ? 'This file is too large to preview; download the project archive instead.' : 'Could not load this file.'}
       />
     );
   }
-  if (!file) return <Empty description={<Text style={{ color: '#8b949e' }}>Select a file</Text>} />;
+  if (!file) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Select a file" />;
 
   let body: React.ReactNode;
   switch (file.kind) {
@@ -119,13 +126,14 @@ export const ArtifactViewer: React.FC<{ file: ArtifactContent | undefined; loadi
   }
 
   return (
-    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+    <Flex vertical gap={12}>
       <Space wrap>
-        <Text style={{ color: '#e6edf3', fontFamily: 'monospace' }}>{file.path}</Text>
-        <Tag>{file.kind}</Tag>
-        <Text style={{ color: '#8b949e', fontSize: 12 }}>{formatSize(file.size)}</Text>
+        <FileOutlined />
+        <Text code copyable={{ text: file.path }}>{file.path}</Text>
+        <Tag color="blue">{file.kind}</Tag>
+        <Text type="secondary" style={{ fontSize: 12 }}>{formatSize(file.size)}</Text>
       </Space>
       {body}
-    </Space>
+    </Flex>
   );
 };

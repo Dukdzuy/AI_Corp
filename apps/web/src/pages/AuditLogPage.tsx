@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Alert, Button, Card, DatePicker, Input, Select, Space, Table, Tag, Typography, message } from 'antd';
+import { Alert, App, Avatar, Badge, Button, Card, DatePicker, Flex, Input, Select, Space, Table, Tag, Typography, theme } from 'antd';
 import { AuditOutlined, DownloadOutlined, WarningOutlined } from '@ant-design/icons';
 import { AuditEntryView, AuditFilter, exportAuditCsv, useAnomalies, useAuditLog } from '../lib/api/hooks/audit';
 import { describeChanges } from './auditFormat';
+import { PageHeader } from '../components/common/PageHeader';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const ACTOR_COLORS: Record<string, string> = { user: 'blue', api_key: 'purple', agent: 'cyan', system: 'default', anonymous: 'orange' };
 
@@ -19,6 +20,8 @@ export const AuditLogPage: React.FC = () => {
   const [range, setRange] = useState<any>(null);
   const { data, isLoading } = useAuditLog(filter, page, pageSize);
   const { data: anomalies = [] } = useAnomalies(24);
+  const { message } = App.useApp();
+  const { token } = theme.useToken();
 
   const update = (patch: Partial<AuditFilter>) => {
     setPage(1);
@@ -26,7 +29,7 @@ export const AuditLogPage: React.FC = () => {
   };
 
   const columns = [
-    { title: 'Time', dataIndex: 'timestamp', key: 'timestamp', width: 170, render: (t: string) => new Date(t).toLocaleString() },
+    { title: 'Time', dataIndex: 'timestamp', key: 'timestamp', width: 180, fixed: 'left' as const, render: (t: string) => <Text type="secondary">{new Date(t).toLocaleString()}</Text> },
     {
       title: 'Actor',
       key: 'actor',
@@ -43,10 +46,10 @@ export const AuditLogPage: React.FC = () => {
       title: 'Resource',
       key: 'resource',
       render: (_: unknown, e: AuditEntryView) => (
-        <Space direction="vertical" size={0}>
+        <Flex vertical>
           <Text>{e.resourceType}</Text>
-          {e.resourceId && <Text type="secondary" style={{ fontSize: 11 }}>{e.resourceId}</Text>}
-        </Space>
+          {e.resourceId && <Text type="secondary" style={{ fontSize: 11 }} copyable={{ text: e.resourceId }}>{e.resourceId.slice(0, 13)}</Text>}
+        </Flex>
       ),
     },
     {
@@ -54,11 +57,11 @@ export const AuditLogPage: React.FC = () => {
       key: 'success',
       width: 220,
       render: (_: unknown, e: AuditEntryView) =>
-        e.success ? <Tag color="green">ok</Tag> : (
-          <Space direction="vertical" size={0}>
-            <Tag color="red">failed</Tag>
+        e.success ? <Badge status="success" text="ok" /> : (
+          <Flex vertical>
+            <Badge status="error" text="failed" />
             {e.errorMessage && <Text type="danger" style={{ fontSize: 11 }}>{e.errorMessage}</Text>}
-          </Space>
+          </Flex>
         ),
     },
     { title: 'IP', dataIndex: 'ipAddress', key: 'ip', width: 120, render: (ip: string | null) => <Text type="secondary">{ip || '—'}</Text> },
@@ -74,8 +77,13 @@ export const AuditLogPage: React.FC = () => {
   };
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Title level={4} style={{ margin: 0 }}><AuditOutlined /> Audit Log</Title>
+    <Flex vertical gap={16} style={{ maxWidth: 1400, margin: '0 auto' }}>
+      <PageHeader
+        title="Audit Log"
+        subTitle="Who did what and when, with before/after values. Security anomalies of the last 24 hours are shown on top."
+        avatar={<Avatar shape="square" size={44} icon={<AuditOutlined />} style={{ background: token.colorPrimaryBg, color: token.colorPrimary }} />}
+        extra={<Button icon={<DownloadOutlined />} onClick={exportCsv}>Export CSV</Button>}
+      />
 
       {anomalies.map(a => (
         <Alert
@@ -83,14 +91,14 @@ export const AuditLogPage: React.FC = () => {
           type={a.severity === 'critical' ? 'error' : 'warning'}
           showIcon
           icon={<WarningOutlined />}
-          message={`Security anomaly: ${a.rule.replace(/_/g, ' ')}`}
+          title={`Security anomaly: ${a.rule.replace(/_/g, ' ')}`}
           description={`${a.message} (last at ${new Date(a.lastAt).toLocaleTimeString()})`}
         />
       ))}
 
       <Card size="small">
         <Space wrap>
-          <Input.Search placeholder="Search actor, action, resource id" allowClear style={{ width: 280 }} onSearch={search => update({ search })} />
+          <Input.Search placeholder="Search actor, action, resource id" allowClear prefix={<AuditOutlined />} style={{ width: 280 }} onSearch={search => update({ search })} />
           <Select
             placeholder="Action"
             allowClear
@@ -113,14 +121,15 @@ export const AuditLogPage: React.FC = () => {
               update({ from: v?.[0]?.toISOString(), to: v?.[1]?.toISOString() });
             }}
           />
-          <Button icon={<DownloadOutlined />} onClick={exportCsv}>Export CSV</Button>
         </Space>
       </Card>
 
-      <Card size="small">
+      <Card styles={{ body: { padding: 0 } }}>
         <Table
           rowKey="id"
-          size="small"
+          size="middle"
+          sticky
+          scroll={{ x: 1000 }}
           loading={isLoading}
           dataSource={data?.items ?? []}
           columns={columns}
@@ -141,7 +150,7 @@ export const AuditLogPage: React.FC = () => {
           }}
         />
       </Card>
-    </Space>
+    </Flex>
   );
 };
 

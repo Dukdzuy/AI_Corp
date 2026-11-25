@@ -1,16 +1,10 @@
 import React, { useMemo } from 'react';
+import { Divider, Table, Typography, theme } from 'antd';
 import { Block, Inline, parseMarkdown } from './markdown';
 
-const styles = {
-  root: { color: '#c9d1d9', fontSize: 14, lineHeight: 1.6 } as React.CSSProperties,
-  code: { background: '#0d1117', border: '1px solid #30363d', borderRadius: 4, padding: '1px 5px', fontSize: 12, fontFamily: 'monospace' } as React.CSSProperties,
-  pre: { background: '#0d1117', border: '1px solid #30363d', borderRadius: 6, padding: 12, fontSize: 12, overflow: 'auto', margin: '8px 0' } as React.CSSProperties,
-  table: { borderCollapse: 'collapse', margin: '8px 0', fontSize: 13, width: '100%' } as React.CSSProperties,
-  cell: { border: '1px solid #30363d', padding: '4px 8px', textAlign: 'left', verticalAlign: 'top' } as React.CSSProperties,
-  quote: { borderLeft: '3px solid #30363d', margin: '8px 0', padding: '0 12px', color: '#8b949e' } as React.CSSProperties,
-};
+const { Title, Paragraph, Text, Link } = Typography;
 
-const HEADING_SIZES = [26, 21, 17, 15, 14, 13];
+type Token = ReturnType<typeof theme.useToken>['token'];
 
 function renderInline(nodes: Inline[]): React.ReactNode[] {
   return nodes.map((node, i) => {
@@ -18,71 +12,105 @@ function renderInline(nodes: Inline[]): React.ReactNode[] {
       case 'text':
         return <React.Fragment key={i}>{node.text}</React.Fragment>;
       case 'strong':
-        return <strong key={i} style={{ color: '#e6edf3' }}>{renderInline(node.children)}</strong>;
+        return <Text key={i} strong>{renderInline(node.children)}</Text>;
       case 'em':
-        return <em key={i}>{renderInline(node.children)}</em>;
+        return <Text key={i} italic>{renderInline(node.children)}</Text>;
       case 'code':
-        return <code key={i} style={styles.code}>{node.text}</code>;
+        return <Text key={i} code>{node.text}</Text>;
       case 'link':
         return /^https?:\/\//i.test(node.href)
-          ? <a key={i} href={node.href} target="_blank" rel="noopener noreferrer">{renderInline(node.children)}</a>
-          : <span key={i} style={{ textDecoration: 'underline dotted' }}>{renderInline(node.children)}</span>;
+          ? <Link key={i} href={node.href} target="_blank" rel="noopener noreferrer">{renderInline(node.children)}</Link>
+          : <Text key={i} underline>{renderInline(node.children)}</Text>;
     }
   });
 }
 
-function renderBlock(block: Block, key: number): React.ReactNode {
+function renderBlock(block: Block, key: number, token: Token): React.ReactNode {
   switch (block.type) {
     case 'heading': {
-      const Tag = `h${block.level}` as keyof JSX.IntrinsicElements;
+      // Typography.Title has levels 1–5; h6 is shown as a level-5 title
+      const level = Math.min(block.level, 5) as 1 | 2 | 3 | 4 | 5;
       return (
-        <Tag key={key} style={{ color: '#e6edf3', fontSize: HEADING_SIZES[block.level - 1], margin: '18px 0 8px', borderBottom: block.level <= 2 ? '1px solid #21262d' : undefined, paddingBottom: block.level <= 2 ? 4 : 0 }}>
-          {renderInline(block.children)}
-        </Tag>
+        <React.Fragment key={key}>
+          <Title level={level} style={{ marginTop: token.marginLG, marginBottom: token.marginXS }}>
+            {renderInline(block.children)}
+          </Title>
+          {block.level <= 2 && <Divider style={{ margin: `0 0 ${token.marginSM}px` }} />}
+        </React.Fragment>
       );
     }
     case 'paragraph':
-      return <p key={key} style={{ margin: '8px 0' }}>{renderInline(block.children)}</p>;
+      return <Paragraph key={key} style={{ margin: `${token.marginXS}px 0` }}>{renderInline(block.children)}</Paragraph>;
     case 'list': {
       const items = block.items.map((item, i) => <li key={i}>{renderInline(item)}</li>);
-      return block.ordered
-        ? <ol key={key} start={block.start} style={{ paddingLeft: 24, margin: '8px 0' }}>{items}</ol>
-        : <ul key={key} style={{ paddingLeft: 24, margin: '8px 0' }}>{items}</ul>;
+      return (
+        <Paragraph key={key} style={{ margin: `${token.marginXS}px 0` }}>
+          {block.ordered
+            ? <ol start={block.start} style={{ paddingLeft: 24, margin: 0 }}>{items}</ol>
+            : <ul style={{ paddingLeft: 24, margin: 0 }}>{items}</ul>}
+        </Paragraph>
+      );
     }
     case 'table':
       return (
-        <div key={key} style={{ overflowX: 'auto' }}>
-          <table style={styles.table}>
-            <thead>
-              <tr>
-                {block.header.map((cell, c) => (
-                  <th key={c} style={{ ...styles.cell, background: '#161b22', color: '#e6edf3', textAlign: block.align[c] || 'left' }}>{renderInline(cell)}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {block.rows.map((row, r) => (
-                <tr key={r}>
-                  {row.map((cell, c) => (
-                    <td key={c} style={{ ...styles.cell, textAlign: block.align[c] || 'left' }}>{renderInline(cell)}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Table
+          key={key}
+          size="small"
+          bordered
+          pagination={false}
+          scroll={{ x: 'max-content' }}
+          style={{ margin: `${token.marginXS}px 0` }}
+          rowKey="__row"
+          columns={block.header.map((cell, c) => ({
+            key: c,
+            title: renderInline(cell),
+            dataIndex: c,
+            align: (block.align[c] || 'left') as 'left' | 'center' | 'right',
+            render: (value: Inline[]) => renderInline(value ?? []),
+          }))}
+          dataSource={block.rows.map((row, r) => ({ __row: r, ...Object.fromEntries(row.map((cell, c) => [c, cell])) }))}
+        />
       );
     case 'code':
-      return <pre key={key} style={styles.pre}><code>{block.text}</code></pre>;
+      return (
+        <pre
+          key={key}
+          style={{
+            background: token.colorFillQuaternary,
+            border: `1px solid ${token.colorBorderSecondary}`,
+            borderRadius: token.borderRadius,
+            padding: token.paddingSM,
+            fontSize: token.fontSizeSM,
+            fontFamily: token.fontFamilyCode,
+            overflow: 'auto',
+            margin: `${token.marginXS}px 0`,
+          }}
+        >
+          <code>{block.text}</code>
+        </pre>
+      );
     case 'quote':
-      return <blockquote key={key} style={styles.quote}>{block.children.map(renderBlock)}</blockquote>;
+      return (
+        <blockquote
+          key={key}
+          style={{
+            borderInlineStart: `3px solid ${token.colorBorder}`,
+            margin: `${token.marginXS}px 0`,
+            padding: `0 ${token.paddingSM}px`,
+            color: token.colorTextSecondary,
+          }}
+        >
+          {block.children.map((child, i) => renderBlock(child, i, token))}
+        </blockquote>
+      );
     case 'rule':
-      return <hr key={key} style={{ border: 0, borderTop: '1px solid #30363d', margin: '16px 0' }} />;
+      return <Divider key={key} />;
   }
 }
 
-/** Renders generated Markdown as React elements (no HTML injection) */
+/** Renders generated Markdown as Ant Design Typography, Table and Divider elements (no HTML injection) */
 export const MarkdownView: React.FC<{ source: string }> = ({ source }) => {
+  const { token } = theme.useToken();
   const blocks = useMemo(() => parseMarkdown(source), [source]);
-  return <div style={styles.root}>{blocks.map(renderBlock)}</div>;
+  return <Typography style={{ lineHeight: 1.7 }}>{blocks.map((block, i) => renderBlock(block, i, token))}</Typography>;
 };

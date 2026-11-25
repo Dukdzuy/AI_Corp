@@ -1,23 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Typography, Space, Card, Tag, Button, Avatar, Descriptions, Timeline, Badge, Spin } from 'antd';
-import { ArrowLeftOutlined, RobotOutlined, LoadingOutlined, BulbOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Avatar, Badge, Card, Descriptions, Empty, Space, Tag, Timeline, Typography, theme } from 'antd';
+import { HomeOutlined, RobotOutlined, LoadingOutlined, BulbOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import { AgentRole, WebSocketEventType, AgentThinkingEvent, AgentActionEvent } from '@ai-corp/shared-types';
 import socketClient from '../lib/websocket/socket-client';
 import { LearningPanel } from '../components/learning/LearningPanel';
+import { PageHeader } from '../components/common/PageHeader';
+import { roleColor as roleTagColor, roleHex } from '../theme/palette';
+import { useIsDark } from '../theme/AppThemeProvider';
 
-const { Title, Text } = Typography;
-
-const ROLE_COLORS: Record<string, string> = {
-  CEO: '#722ed1',
-  PM: '#1677ff',
-  DEV: '#52c41a',
-  QA: '#fa8c16',
-  QC: '#13c2c2',
-  BA: '#2f54eb',
-  ARCHITECT: '#a0d911',
-  MARKETING: '#eb2f96',
-};
+const { Text } = Typography;
 
 const ROLE_LABELS: Record<string, string> = {
   CEO: 'Chief Executive Officer',
@@ -41,7 +33,8 @@ export const AgentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const agentRole = (id?.toUpperCase() ?? 'CEO') as string;
-  const roleColor = ROLE_COLORS[agentRole] ?? '#8b949e';
+  const { token } = theme.useToken();
+  const roleColor = roleHex(agentRole, useIsDark());
   const roleLabel = ROLE_LABELS[agentRole] ?? agentRole;
 
   const [isThinking, setIsThinking] = useState(false);
@@ -84,122 +77,75 @@ export const AgentDetail: React.FC = () => {
   }, [agentRole]);
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto' }}>
-      <Button
-        type="text"
-        icon={<ArrowLeftOutlined />}
-        onClick={() => navigate(-1)}
-        style={{ color: '#8b949e', marginBottom: 16 }}
-      >
-        Back
-      </Button>
+    <div style={{ maxWidth: 960, margin: '0 auto' }}>
+      <PageHeader
+        breadcrumb={[
+          { title: <a onClick={() => navigate('/')}><HomeOutlined /> Dashboard</a> },
+          { title: <a onClick={() => navigate('/agents')}>Agents</a> },
+          { title: `${agentRole} Agent` },
+        ]}
+        avatar={
+          <Badge status={isThinking ? 'warning' : 'success'} dot offset={[-6, 56]}>
+            <Avatar size={64} icon={isThinking ? <LoadingOutlined /> : <RobotOutlined />} style={{ background: roleColor }} />
+          </Badge>
+        }
+        title={`${agentRole} Agent`}
+        subTitle={roleLabel}
+        tags={
+          <>
+            <Tag color={roleTagColor(agentRole)}>{agentRole}</Tag>
+            <Tag color={isThinking ? 'warning' : 'success'}>{isThinking ? 'Thinking...' : 'Idle'}</Tag>
+          </>
+        }
+      />
 
-      {/* Agent Header */}
-      <Space align="center" size={20} style={{ marginBottom: 32 }}>
-        <Badge dot color={isThinking ? '#faad14' : '#52c41a'} offset={[-4, 4]}>
-          <Avatar
-            size={72}
-            icon={isThinking ? <LoadingOutlined /> : <RobotOutlined />}
-            style={{ background: roleColor, fontSize: 32 }}
-          />
-        </Badge>
-        <div>
-          <Title level={2} style={{ color: '#e6edf3', margin: 0 }}>
-            {agentRole} Agent
-          </Title>
-          <Space size={8} style={{ marginTop: 6 }}>
-            <Tag color={roleColor}>{agentRole}</Tag>
-            <Tag color={isThinking ? 'warning' : 'success'}>
-              {isThinking ? 'Thinking...' : 'Idle'}
-            </Tag>
-          </Space>
-        </div>
-      </Space>
-
-      {/* Info Card */}
-      <Card
-        style={{
-          background: '#161b22',
-          border: '1px solid #30363d',
-          borderRadius: 12,
-          marginBottom: 20,
-        }}
-        styles={{ body: { padding: 24 } }}
-      >
+      <Card style={{ marginBottom: token.marginLG }}>
         <Descriptions
-          column={2}
-          labelStyle={{ color: '#8b949e' }}
-          contentStyle={{ color: '#e6edf3' }}
-        >
-          <Descriptions.Item label="Agent ID">{id}</Descriptions.Item>
-          <Descriptions.Item label="Role">{roleLabel}</Descriptions.Item>
-          <Descriptions.Item label="Status">
-            <Tag color={isThinking ? 'warning' : 'success'}>
-              {isThinking ? 'Thinking' : 'Idle'}
-            </Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="Memory Namespaces">lessons_learned, execution_outcomes</Descriptions.Item>
-          <Descriptions.Item label="Current Task" span={2}>
-            {currentTask ? (
-              <Text style={{ color: '#faad14', fontStyle: 'italic' }}>{currentTask}</Text>
-            ) : (
-              <Text style={{ color: '#484f58' }}>No active task</Text>
-            )}
-          </Descriptions.Item>
-        </Descriptions>
+          column={{ xs: 1, md: 2 }}
+          items={[
+            { key: 'id', label: 'Agent ID', children: <Text copyable>{id}</Text> },
+            { key: 'role', label: 'Role', children: roleLabel },
+            { key: 'status', label: 'Status', children: <Badge status={isThinking ? 'warning' : 'success'} text={isThinking ? 'Thinking' : 'Idle'} /> },
+            {
+              key: 'memory',
+              label: 'Memory Namespaces',
+              children: <Space size={4} wrap><Tag>lessons_learned</Tag><Tag>execution_outcomes</Tag></Space>,
+            },
+            {
+              key: 'task',
+              label: 'Current Task',
+              span: 'filled',
+              children: currentTask ? <Text italic type="warning">{currentTask}</Text> : <Text type="secondary">No active task</Text>,
+            },
+          ]}
+        />
       </Card>
 
       <LearningPanel role={agentRole} />
 
-      {/* Recent Activity */}
       <Card
         title={
           <Space>
-            <ThunderboltOutlined style={{ color: '#1677ff' }} />
-            <Text style={{ color: '#e6edf3' }}>Recent Activity</Text>
-            <Tag style={{ background: '#21262d', border: 'none', color: '#8b949e', fontSize: 11 }}>
-              {activities.length}
-            </Tag>
+            <ThunderboltOutlined style={{ color: token.colorPrimary }} />
+            Recent Activity
+            <Badge count={activities.length} showZero color={token.colorFillSecondary} style={{ color: token.colorTextSecondary }} />
           </Space>
         }
-        style={{
-          background: '#161b22',
-          border: '1px solid #30363d',
-          borderRadius: 12,
-        }}
-        styles={{ header: { background: '#161b22', borderBottom: '1px solid #30363d' } }}
       >
         {activities.length === 0 ? (
-          <Text style={{ color: '#484f58' }}>
-            No recent activity. Activity will appear here when the agent is invoked.
-          </Text>
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No recent activity. Activity will appear here when the agent is invoked." />
         ) : (
           <Timeline
-            items={activities.map((entry) => ({
-              color: entry.type === 'thinking' ? 'warning' : 'blue',
-              children: (
-                <div>
-                  <Space size={6}>
-                    {entry.type === 'thinking' ? (
-                      <BulbOutlined style={{ color: '#faad14' }} />
-                    ) : (
-                      <ThunderboltOutlined style={{ color: '#1677ff' }} />
-                    )}
-                    <Text style={{ color: '#8b949e', fontSize: 11 }}>
-                      {entry.timestamp.toLocaleTimeString()}
-                    </Text>
-                  </Space>
-                  <div>
-                    <Text style={{ color: '#e6edf3', fontSize: 13 }}>
-                      {entry.message}
-                    </Text>
-                    {entry.toolName && (
-                      <Tag color="blue" style={{ marginLeft: 6, fontSize: 11 }}>
-                        {entry.toolName}
-                      </Tag>
-                    )}
-                  </div>
-                </div>
+            items={activities.map((entry, i) => ({
+              key: i,
+              color: entry.type === 'thinking' ? 'orange' : 'blue',
+              icon: entry.type === 'thinking' ? <BulbOutlined /> : <ThunderboltOutlined />,
+              title: <Text type="secondary" style={{ fontSize: token.fontSizeSM }}>{entry.timestamp.toLocaleTimeString()}</Text>,
+              content: (
+                <Space size={6} wrap>
+                  <Text>{entry.message}</Text>
+                  {entry.toolName && <Tag color="blue">{entry.toolName}</Tag>}
+                </Space>
               ),
             }))}
           />
