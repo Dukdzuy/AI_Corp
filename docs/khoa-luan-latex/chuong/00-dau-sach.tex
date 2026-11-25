@@ -1,0 +1,46 @@
+% Trang cam đoan, cảm ơn, tóm tắt tiếng Việt và tiếng Anh.
+
+\begin{preamble}{Lời cam đoan}
+Em xin cam đoan khoá luận ``Thiết kế và phát triển nền tảng đa tác tử tự động hoá quy trình doanh nghiệp theo hướng đối tượng'' là công trình do em tự thực hiện dưới sự hướng dẫn của PGS.~TS.~Trương Ninh Thuận. Mã nguồn, sơ đồ và số liệu trong khoá luận đều lấy từ kho mã của đề tài, và số liệu đo nào cũng đi kèm tệp kết quả hoặc câu lệnh để người đọc chạy lại. Những nội dung tham khảo từ sách, bài báo và tài liệu kỹ thuật đều được trích dẫn đủ trong danh mục tài liệu tham khảo.
+
+Nếu có điều gì sai với lời cam đoan trên, em xin hoàn toàn chịu trách nhiệm.
+
+\vspace{1cm}
+\hfill\begin{tabular}{c}
+Hà Nội, ngày \ldots{} tháng \ldots{} năm 2026\\
+Sinh viên\\[2cm]
+[Họ và tên sinh viên]
+\end{tabular}
+\end{preamble}
+
+\begin{preamble}{Lời cảm ơn}
+Em xin cảm ơn PGS.~TS.~Trương Ninh Thuận. Suốt thời gian làm khoá luận, thầy chỉ cho em cách nhìn bài toán theo hướng phân tích và thiết kế hướng đối tượng, góp ý cho từng bản báo cáo tiến độ, và luôn nhắc em phải đưa ra số liệu chứ đừng chỉ kể lại.
+
+Em xin cảm ơn các thầy cô Khoa Công nghệ Thông tin, Trường Đại học Công nghệ, Đại học Quốc gia Hà Nội đã dạy em những kiến thức nền về kỹ nghệ phần mềm, cơ sở dữ liệu, mạng máy tính và trí tuệ nhân tạo. Đó là những thứ em dùng hằng ngày khi làm đề tài này.
+
+Em cũng cảm ơn gia đình và bạn bè đã động viên, lo cho em để em yên tâm làm xong khoá luận.
+
+Thời gian và kinh nghiệm còn ít nên chắc chắn khoá luận vẫn còn chỗ thiếu sót. Em rất mong được thầy cô và các bạn góp ý thêm.
+\end{preamble}
+
+\begin{preamble}{Tóm tắt}
+\textbf{Tóm tắt:} Một dự án phần mềm dù nhỏ cũng cần nhiều người cùng làm, gồm người phân tích nghiệp vụ, kiến trúc sư, người quản lý dự án, lập trình viên, người kiểm thử và người đảm bảo chất lượng. Khi làm thủ công, tài liệu phân tích và thiết kế hướng đối tượng (OOAD) thường lệch dần khỏi mã nguồn, còn chất lượng sản phẩm thì hay được tuyên bố hơn là được đo. Các hệ đa tác tử dùng mô hình ngôn ngữ lớn (LLM) như MetaGPT hay ChatDev đã tự động hoá được một phần chuỗi việc ấy, nhưng bản thân chúng ít khi được thiết kế theo OOAD, và sản phẩm chúng sinh ra hiếm khi truy vết được từ yêu cầu tới kiểm thử.
+
+Khoá luận xây dựng AI-CORP, một nền tảng gồm tám tác tử (CEO, BA, Architect, PM, DEV, QC, QA, Marketing) do một bộ máy quy trình điều phối theo đồ thị có hướng. Nền tảng theo kiến trúc phân lớp và thiết kế hướng miền, với tầng miền gồm 106 tệp không phụ thuộc framework. Mỗi tác tử là lớp con của \code{BaseAgent}, dùng mẫu Template Method cho chu trình chung và hai Strategy cho phần tư duy, hành động riêng của từng vai trò. Điểm chính của khoá luận là áp OOAD ở hai mức, một cho chính nền tảng và một cho mọi dự án mà nền tảng sinh ra. Mỗi dự án đi qua chuỗi use case, mô hình miền, sơ đồ UML, mã nguồn bốn tầng, kiểm thử chấp nhận theo use case và ma trận truy vết. Ba lớp kiểm tra tự động canh chuỗi này: cổng chất lượng OOAD, phân tích tĩnh có luật phân lớp và kiểm thử đã chạy thật. Giao diện web dùng Ant Design 6, có chế độ sáng, tối và chế độ gọn.
+
+Về kết quả, 707 kiểm thử API trong 50 bộ và 44 kiểm thử giao diện đều đạt, tầng miền có độ bao phủ 97,1\% số dòng và 88,1\% số nhánh. Ba lần chạy đầu cuối trên PostgreSQL, Redis và nginx đạt lần lượt 24/24, 21/21 và 44/44 kiểm tra. Mỗi nút quy trình xử lý xong trong vòng 2 giây khi chưa tính độ trễ của LLM. Với 20 người dùng đồng thời, một tiến trình API phục vụ 604,8 yêu cầu mỗi giây mà không có lỗi. Kiểm thử, rà soát mã và cài lại từ đầu đã tìm ra và sửa 50 lỗi, trong đó có lỗ hổng cho phép người chỉ có quyền xem phê duyệt quy trình qua WebSocket. Hạn chế lớn nhất là các phép đo dùng một LLM kịch bản cho kết quả lặp lại được, nên chất lượng đầu ra khi dùng LLM thật và hiệu quả của cơ chế học chưa được đo bằng con số.
+
+\vspace{0.5cm}
+\textit{\textbf{Từ khoá:} phân tích và thiết kế hướng đối tượng, hệ đa tác tử, mô hình ngôn ngữ lớn, bộ máy quy trình, mẫu thiết kế, truy vết yêu cầu.}
+\end{preamble}
+
+\begin{preamble}{Abstract}
+\textbf{Abstract:} Even a small software project involves several roles: business analysis, architecture, planning, programming, testing and quality assurance. When this work is done by hand, object-oriented analysis and design (OOAD) documents tend to drift away from the code, and quality is claimed more often than it is measured. LLM-based multi-agent systems such as MetaGPT and ChatDev automate part of this chain, but they are rarely designed with OOAD themselves, and their output is seldom traceable from requirements to tests.
+
+This thesis presents AI-CORP, a platform of eight agents (CEO, BA, Architect, PM, DEV, QC, QA, Marketing) coordinated by a graph-based workflow engine. The platform follows a layered, domain-driven architecture whose 106-file domain layer is framework-independent. Every agent extends \code{BaseAgent}, which fixes the shared life cycle as a Template Method and delegates role-specific thinking and acting to two injected Strategies. OOAD is applied at two levels: to the platform itself and to every project it generates. Each generated project goes through use cases, a domain model, UML diagrams, four-layer source code, use-case acceptance tests and a traceability matrix, guarded by an OOAD quality gate, static analysis with a layering rule, and executed tests. The web client is built on Ant Design 6 with light, dark and compact modes.
+
+All 707 API tests in 50 suites and 44 web tests pass; the domain layer reaches 97.1\% line and 88.1\% branch coverage. Three end-to-end runs on PostgreSQL, Redis and nginx pass 24/24, 21/21 and 44/44 checks. Every workflow node finishes within 2 seconds excluding LLM latency, and one API process serves 604.8 requests per second for 20 concurrent users without errors. Testing, code review and clean installs found and fixed 50 defects, including a WebSocket path that let read-only users approve workflow steps. The main limitation is that all measurements use a scripted LLM for repeatability, so output quality with real models and the effect of agent learning remain to be measured.
+
+\vspace{0.5cm}
+\textit{\textbf{Keywords:} object-oriented analysis and design, multi-agent systems, large language models, workflow engine, design patterns, requirements traceability.}
+\end{preamble}

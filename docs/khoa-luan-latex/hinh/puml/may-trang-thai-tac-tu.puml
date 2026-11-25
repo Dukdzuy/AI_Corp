@@ -1,0 +1,20 @@
+@startuml
+!include _style.iuml
+hide empty description
+[*] --> IDLE
+IDLE --> THINKING : execute() / phát TaskAssignedEvent
+THINKING --> ACTING : think() xong
+THINKING --> ERROR : ngoại lệ
+ACTING --> COMPLETED : act() xong
+ACTING --> WAITING_APPROVAL : cần con người duyệt
+ACTING --> ERROR : ngoại lệ
+WAITING_APPROVAL --> ACTING : đã duyệt
+WAITING_APPROVAL --> COMPLETED
+WAITING_APPROVAL --> ERROR : bị từ chối
+COMPLETED --> IDLE : lưu ký ức,\nphát AgentCompletedTaskEvent
+ERROR --> IDLE : lỗi tạm thời
+note right of IDLE
+  Mỗi lần gọi execute() có
+  một máy trạng thái riêng
+end note
+@enduml

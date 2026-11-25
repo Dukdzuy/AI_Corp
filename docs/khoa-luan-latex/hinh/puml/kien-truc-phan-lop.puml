@@ -1,0 +1,40 @@
+@startuml
+!include _style.iuml
+skinparam nodesep 25
+skinparam ranksep 40
+package "Tầng trình bày" as P {
+  [Controller REST] as C
+  [Cổng WebSocket] as WS
+  [Chuỗi guard\nxác thực → giới hạn → quyền] as G
+}
+package "Tầng ứng dụng" as A {
+  [Dịch vụ ứng dụng\n(mỗi use case một phương thức)] as S
+  [Tám tác tử\nBaseAgent + chiến lược] as AG
+  [Bộ máy quy trình\nWorkflowEngine] as WE
+  [Bộ xử lý sự kiện\nkiểm toán, webhook, học, dự báo] as H
+}
+package "Tầng miền (src/domain, 106 tệp)" as D {
+  [Thực thể, value object,\naggregate] as E
+  [Sự kiện miền, EventBus] as EV
+  [Máy trạng thái,\nchính sách thuần] as SM
+  [Giao diện Repository\nvà các cổng (port)] as R
+}
+package "Tầng hạ tầng" as I {
+  [Repository Prisma] as PR
+  [Nhà cung cấp LLM] as LLM
+  [Sandbox Docker,\nkho tệp dự án] as SB
+  [Bộ phân tích TypeScript,\nxuất PDF, mã hoá AES-GCM] as TS
+}
+C --> S
+WS --> S
+G .> C
+S --> E
+AG --> R
+WE --> E
+H --> EV
+S --> R
+PR ..|> R : hiện thực
+LLM ..|> R
+SB ..|> R
+TS ..|> R
+@enduml

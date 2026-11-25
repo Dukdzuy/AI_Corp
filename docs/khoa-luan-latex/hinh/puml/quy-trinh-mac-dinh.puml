@@ -1,0 +1,26 @@
+@startuml
+!include _style.iuml
+start
+:CEO chia mốc dự án;
+partition "Quy trình con: phân tích và thiết kế" {
+  :BA viết use case;
+  repeat
+    :Architect dựng mô hình miền,\nsơ đồ UML và khung mã;
+  repeat while (Cổng OOAD đạt?) is (không)
+  -> có;
+}
+:PM tạo một công việc cho mỗi use case;
+partition "Quy trình con: xây dựng và kiểm chứng" {
+  repeat
+    :DEV hiện thực mã;
+    :Phân tích tĩnh, sửa tối đa một vòng;
+    :QC viết và chạy kiểm thử chấp nhận,\nlập ma trận truy vết;
+    :QA rà soát so với thiết kế;
+  repeat while (qa_approved?) is (không)
+  -> có;
+}
+:Marketing soạn thông báo sản phẩm;
+:Thành viên hội đồng quản trị phê duyệt;
+:CEO đóng dự án;
+stop
+@enduml

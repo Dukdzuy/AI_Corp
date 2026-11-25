@@ -1,0 +1,10 @@
+@startuml
+!include _style.iuml
+hide empty description
+[*] --> todo : PM tạo (một công việc\ncho mỗi use case)
+todo --> in_progress : DEV nhận việc
+in_progress --> review : DEV nộp mã
+review --> done : QA duyệt
+review --> in_progress : QA từ chối
+done --> [*]
+@enduml

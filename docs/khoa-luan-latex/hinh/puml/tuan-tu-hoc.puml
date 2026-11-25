@@ -1,0 +1,22 @@
+@startuml
+!include _style.iuml
+participant "EventBus" as B
+participant "OutcomeSignalPolicy" as P
+participant "LearningService" as L
+participant "MemoryService" as M
+participant "AgentLLMService" as F
+participant "Chiến lược tư duy" as T
+B -> L : QualityGateEvaluated /\nQC hoàn tất / QA phán quyết
+L -> P : vai trò nào được đánh giá?
+P --> L : BA, Architect ← cổng OOAD\nDEV ← kết quả QC\nDEV, QC ← phán quyết QA
+L -> M : lưu kết quả vào bộ nhớ vai trò
+alt đủ N kết quả (mặc định 3)
+  L -> F : chắt lọc thành bài học
+  F --> L : văn bản bài học (có tính chi phí)
+  L -> M : lưu ký ức lessons_learned
+end
+...lần thực thi sau...
+T -> M : nạp bài học trước tiên
+M --> T : lessons_learned
+T -> F : lời nhắc có bài học
+@enduml

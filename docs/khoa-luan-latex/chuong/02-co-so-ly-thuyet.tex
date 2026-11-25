@@ -1,0 +1,97 @@
+\chapter{Cơ sở lý thuyết và các nghiên cứu liên quan}
+\label{chap:co-so}
+
+Nền tảng dựa trên bốn mảng kiến thức: phân tích và thiết kế hướng đối tượng, hệ đa tác tử, điều phối quy trình, và việc dùng LLM trong kỹ nghệ phần mềm. Chương này điểm lại từng mảng, rồi so AI-CORP với những hệ thống gần nhất để thấy chỗ còn trống mà khoá luận muốn lấp.
+
+\section{Phân tích và thiết kế hướng đối tượng}
+
+\subsection{Use case và UML}
+
+Jacobson đưa ra cách phát triển phần mềm xoay quanh use case~\cite{jacobson1992}. Một use case là chuỗi tương tác giữa một tác nhân (actor) với hệ thống, kết thúc bằng một kết quả có ích cho tác nhân đó. Use case tiện ở chỗ một thứ dùng được cho ba việc. Nó là đơn vị yêu cầu, là đơn vị để viết kiểm thử chấp nhận, và cũng là sợi chỉ để lần sang thiết kế và mã nguồn. Các quan hệ \code{<<include>>} (hành vi con bắt buộc), \code{<<extend>>} (hành vi bổ sung khi thoả điều kiện) và tổng quát hoá giúp khỏi phải chép một đoạn đặc tả ra nhiều chỗ.
+
+UML ra đời khi Booch, Rumbaugh và Jacobson gộp ký pháp của ba người làm một~\cite{booch2005}. Đặc tả UML~2.5 chia sơ đồ thành hai nhóm: nhóm cấu trúc (lớp, đối tượng, thành phần, triển khai, gói, cấu trúc hỗn hợp) và nhóm hành vi (use case, tuần tự, hoạt động, máy trạng thái, giao tiếp, thời gian, tổng quan tương tác)~\cite{omg2017uml}. Kruchten mô tả kiến trúc qua bốn góc nhìn logic, tiến trình, phát triển, vật lý, cộng thêm góc nhìn kịch bản, gọi chung là mô hình 4+1~\cite{kruchten1995}. Tài liệu của khoá luận được sắp theo cách nghĩ đó, gồm sáu nhóm sơ đồ: use case, lớp, tuần tự, hoạt động, máy trạng thái và kiến trúc (gói, thành phần, triển khai).
+
+Larman mô tả một quy trình OOAD lặp. Đầu tiên tìm use case, sau đó dựng mô hình miền chỉ gồm khái niệm, thuộc tính và liên kết, vẽ sơ đồ tuần tự hệ thống, viết hợp đồng thao tác, cuối cùng mới thiết kế lớp bằng các nguyên tắc gán trách nhiệm GRASP như Information Expert, Creator, Controller, Low Coupling, High Cohesion~\cite{larman2004}. AI-CORP đi đúng trình tự này khi làm dự án sinh ra. Tác tử BA viết use case, còn tác tử Architect dựng mô hình miền, vẽ sơ đồ lớp, sơ đồ tuần tự và chọn mẫu thiết kế.
+
+\subsection{Nguyên lý SOLID và mô-đun hoá}
+
+Theo Parnas, nên chia mô-đun sao cho mỗi mô-đun giấu đi một quyết định thiết kế dễ thay đổi~\cite{parnas1972}. Martin gom năm nguyên lý thiết kế lớp lại và đặt tên SOLID~\cite{martin2000,martin2017}:
+
+\begin{itemize}
+\item \textbf{SRP} (trách nhiệm đơn nhất): mỗi lớp chỉ có một lý do để thay đổi.
+\item \textbf{OCP} (đóng mở), có gốc từ Meyer~\cite{meyer1997}: muốn thêm hành vi thì viết lớp mới, không sửa lớp cũ.
+\item \textbf{LSP} (thay thế Liskov)~\cite{liskov1994}: đối tượng lớp con đặt vào chỗ lớp cha mà chương trình vẫn chạy đúng.
+\item \textbf{ISP} (tách giao diện): nên có nhiều giao diện nhỏ, mỗi cái một việc, thay vì một giao diện to ôm đủ thứ.
+\item \textbf{DIP} (đảo phụ thuộc): mô-đun cấp cao và cấp thấp cùng phụ thuộc vào trừu tượng.
+\end{itemize}
+
+Kiến trúc sạch của Martin~\cite{martin2017} và kiến trúc phân lớp của Evans~\cite{evans2003} có chung một quy tắc phụ thuộc: mã ở vòng trong, tức tầng miền, không được biết gì về các vòng ngoài như ứng dụng, hạ tầng hay giao diện. AI-CORP dùng quy tắc này hai lần: một lần cho mã của chính nền tảng, một lần nữa dưới dạng luật kiểm tra tự động trên mã do tác tử DEV viết (mục~\ref{sec:ooad-du-an}).
+
+\subsection{Mẫu thiết kế}
+
+Nhóm tác giả GoF chia 23 mẫu thiết kế thành ba nhóm~\cite{gamma1994}. Nhóm khởi tạo gồm Factory Method, Abstract Factory, Builder, Prototype, Singleton. Nhóm cấu trúc gồm Adapter, Bridge, Composite, Decorator, Facade, Flyweight, Proxy. Nhóm hành vi gồm Chain of Responsibility, Command, Interpreter, Iterator, Mediator, Memento, Observer, State, Strategy, Template Method, Visitor. Fowler bổ sung các mẫu cho ứng dụng doanh nghiệp như Repository, Data Mapper, Service Layer, Unit of Work và Domain Model~\cite{fowler2002}. Evans đưa ra các khối dựng của thiết kế hướng miền: Entity, Value Object, Aggregate, Domain Event, Repository, Factory và Domain Service~\cite{evans2003}.
+
+Mẫu thiết kế chỉ có ý nghĩa khi đi cùng một vấn đề cụ thể trong một bối cảnh cụ thể. Vì thế, ở chương~\ref{chap:thiet-ke}, các mẫu được liệt kê thành bảng ba cột: vấn đề gặp phải, mẫu được chọn và lớp hiện thực trong mã.
+
+\subsection{Truy vết yêu cầu}
+
+Gotel và Finkelstein định nghĩa truy vết yêu cầu là khả năng lần theo vòng đời của một yêu cầu theo cả hai chiều, từ nguồn gốc của nó sang đặc tả, thiết kế, mã nguồn và kiểm thử~\cite{gotel1994}. Chuẩn IEEE~830 coi truy vết được là một trong các đặc điểm của bản đặc tả yêu cầu tốt~\cite{ieee830}. Công cụ hay dùng nhất là ma trận truy vết. Ma trận chỉ đáng tin khi các ô được điền từ dữ liệu thật, ví dụ kết quả kiểm thử đã chạy, chứ không phải gõ tay. Ở AI-CORP, ma trận truy vết của dự án sinh ra được lập từ kết quả chạy kiểm thử chấp nhận.
+
+\subsection{Đảm bảo chất lượng và kiểm soát chất lượng}
+
+Bộ tiêu chuẩn ISO~9000 tách hai khái niệm: đảm bảo chất lượng (QA) là làm cho người ta tin rằng yêu cầu chất lượng sẽ đạt, còn kiểm soát chất lượng (QC) là trực tiếp kiểm tra xem yêu cầu ấy đã đạt chưa~\cite{iso9000}. QA nhìn vào quy trình để phòng lỗi từ trước. QC nhìn vào sản phẩm để tìm lỗi đã có. ISO/IEC~25010 đưa ra mô hình chất lượng sản phẩm với các đặc tính như phù hợp chức năng, hiệu năng, bảo mật và khả năng bảo trì. Riêng khả năng bảo trì lại gồm tính mô-đun, khả năng tái sử dụng, phân tích, sửa đổi và kiểm thử~\cite{iso25010}. Dựa vào chỗ khác nhau giữa QA và QC, AI-CORP tách chúng thành hai tác tử làm hai việc khác nhau.
+
+\section{Hệ đa tác tử}
+
+\subsection{Tác tử và kiến trúc tác tử}
+
+Theo Wooldridge, tác tử là một hệ thống máy tính nằm trong một môi trường và tự hành động được để đạt mục tiêu. Tác tử thông minh thì có thêm tính phản ứng, tính chủ động và khả năng xã hội~\cite{wooldridge2009}. Kiến trúc BDI của Rao và Georgeff mô tả tác tử qua ba thành phần: niềm tin về thế giới, mong muốn và ý định đã cam kết~\cite{rao1995}. Chu trình ``quan sát, cân nhắc, hành động'' của BDI ứng với cặp phương thức \code{think()} và \code{act()} của tác tử trong AI-CORP. Trong đó bộ nhớ dài hạn ứng với niềm tin, còn mục tiêu của công việc được giao ứng với mong muốn.
+
+\subsection{Giao tiếp và phối hợp}
+
+FIPA chuẩn hoá ngôn ngữ giao tiếp tác tử ACL, trong đó mỗi thông điệp mang một hành động ngôn từ (performative) như \code{inform}, \code{request}, \code{propose}, \code{accept-proposal}, \code{reject-proposal}~\cite{fipa2002}. Với việc phân công, mô hình kinh điển là giao thức Contract Net của Smith. Bên quản lý mời thầu, các tác tử gửi đề xuất, rồi bên quản lý chọn một bên và giao hợp đồng~\cite{smith1980}. Stone và Veloso phân loại hệ đa tác tử theo hai trục là mức độ đồng nhất giữa các tác tử và mức độ chúng giao tiếp với nhau~\cite{stone2000}.
+
+AI-CORP chọn cách phối hợp có điều phối trung tâm. Bộ máy quy trình quyết định tác tử nào làm việc gì theo một đồ thị định sẵn. Khi cần cộng tác, chẳng hạn trong phiên lập trình cặp, các tác tử trao đổi thông điệp có kiểu (\code{INFORM}, \code{REQUEST}, \code{PROPOSE}, \code{ACCEPT}, \code{REJECT}) qua một bus thông điệp theo mẫu Mediator. Làm vậy thì tác tử bớt tự chủ, nhưng bù lại hệ thống chạy theo cách đoán trước được và truy vết được. Với một quy trình phát triển phần mềm có cổng chất lượng, hai điều này là bắt buộc.
+
+\section{Điều phối quy trình}
+
+BPMN~2.0 là chuẩn ký pháp cho quy trình nghiệp vụ, với các phần tử sự kiện, công việc và cổng (gateway) rẽ nhánh hoặc song song~\cite{omg2011bpmn}. Mạng Petri là nền hình thức để phân tích tính đạt được, tính sống và tính bị chặn của quy trình~\cite{murata1989}. Van der Aalst và cộng sự tổng kết các mẫu quy trình hay gặp như tuần tự, tách song song, đồng bộ, lựa chọn loại trừ, vòng lặp tuỳ ý và quy trình con~\cite{aalst2003}. Statecharts của Harel mở rộng máy trạng thái hữu hạn với trạng thái lồng nhau và trạng thái song song~\cite{harel1987}. Statecharts cũng là nền của sơ đồ máy trạng thái trong UML.
+
+Bộ máy quy trình của AI-CORP chỉ làm một phần các mẫu trên, vừa đủ cho việc phát triển phần mềm. Có tuần tự, có rẽ nhánh theo phán quyết của QA, có vòng lặp khi QA từ chối và trả việc về cho DEV. Ngoài ra còn tách và nhập nhánh song song có phụ thuộc, quy trình con, và điểm dừng chờ con người phê duyệt. Đồ thị được kiểm tra bằng sắp xếp tô-pô để chắc chắn không có chu trình, trừ những cạnh quay lui đã khai báo rõ.
+
+\section{Mô hình ngôn ngữ lớn trong kỹ nghệ phần mềm}
+
+\subsection{Sinh mã và suy luận}
+
+Các LLM hiện nay đều dựa trên kiến trúc Transformer~\cite{vaswani2017}. Chen và cộng sự giới thiệu Codex cùng bộ đánh giá HumanEval cho bài toán sinh hàm từ mô tả~\cite{chen2021}. SWE-bench thì đo xem mô hình giải được bao nhiêu issue thật trên GitHub, và kết quả cho thấy viết đúng một hàm dễ hơn nhiều so với sửa lỗi trong cả một kho mã~\cite{jimenez2024}. Gợi ý theo chuỗi suy luận (chain-of-thought) giúp mô hình làm bài nhiều bước tốt hơn~\cite{wei2022}. ReAct xen kẽ bước suy luận với bước gọi công cụ~\cite{yao2023}. Còn sinh tăng cường truy xuất (RAG) đưa tri thức bên ngoài vào ngữ cảnh của mô hình~\cite{lewis2020}.
+
+\subsection{Hệ đa tác tử cho phát triển phần mềm}
+
+MetaGPT mã hoá quy trình vận hành chuẩn của một công ty phần mềm thành các vai trò như quản lý sản phẩm, kiến trúc sư, kỹ sư, và các vai trò này chuyển cho nhau tài liệu có cấu trúc~\cite{hong2024}. ChatDev chia việc phát triển thành các giai đoạn thiết kế, lập trình, kiểm thử, mỗi giai đoạn là một cuộc hội thoại giữa hai vai trò~\cite{qian2024}. AutoGen cung cấp khung lập trình cho hội thoại nhiều tác tử~\cite{wu2023}. Về chuyện học từ kinh nghiệm, Reflexion cho tác tử tự viết nhận xét về lần làm hỏng rồi đưa nhận xét đó vào lần thử sau~\cite{shinn2023}. Generative Agents lưu ký ức, truy xuất theo độ liên quan và tổng hợp thành suy ngẫm~\cite{park2023}.
+
+Cơ chế học của AI-CORP gần với Reflexion và Generative Agents ở chỗ bài học được viết bằng ngôn ngữ tự nhiên rồi đưa lại vào lời nhắc. Điểm khác là ai chấm. Ở AI-CORP, kết quả của mỗi tác tử được chấm bằng một tín hiệu từ bên ngoài, có thể là cổng OOAD, kết quả kiểm thử của QC hoặc phán quyết của QA, chứ tác tử không tự chấm mình (mục~\ref{subsec:hoc}).
+
+\subsection{Độ đo chất lượng mã và ước lượng công sức}
+
+McCabe định nghĩa độ phức tạp chu trình là số đường đi độc lập trong đồ thị luồng điều khiển của một hàm~\cite{mccabe1976}. Halstead đo thể tích chương trình từ số toán tử và toán hạng~\cite{halstead1977}. Oman, Hagemeister và Coleman ghép hai độ đo này với số dòng mã thành chỉ số bảo trì (Maintainability Index)~\cite{oman1992,coleman1994}. Về ước lượng công sức, COCOMO của Boehm là mô hình hồi quy kinh điển giữa kích thước phần mềm và công sức~\cite{boehm1981}. Hồi quy ridge thêm một số hạng phạt chuẩn L2 để mô hình không dao động mạnh khi dữ liệu ít và các biến tương quan với nhau~\cite{hoerl1970}. Với mẫu nhỏ, kiểm định chéo bỏ một (leave-one-out) cho ước lượng sai số tổng quát ít bị lệch~\cite{kohavi1995}.
+
+\section{So sánh với các hệ thống liên quan và khoảng trống}
+
+Bảng~\ref{tab:so-sanh} đặt AI-CORP cạnh ba hệ thống gần nhất theo các tiêu chí mà khoá luận quan tâm. Ba cột đầu lấy theo mô tả trong bài báo gốc của từng hệ thống.
+
+\begin{table}{So sánh AI-CORP với các hệ đa tác tử phát triển phần mềm}
+\label{tab:so-sanh}
+\small
+\begin{tabularx}{\textwidth}{|P{3.4cm}|L|L|L|L|}
+\hline
+\textbf{Tiêu chí} & \textbf{MetaGPT} & \textbf{ChatDev} & \textbf{AutoGen} & \textbf{AI-CORP} \\ \hline
+Cách phối hợp & Quy trình chuẩn theo vai trò, trao tài liệu & Chuỗi hội thoại hai vai theo giai đoạn & Hội thoại tự do do lập trình viên định nghĩa & Đồ thị quy trình có kiểu, cổng chất lượng, phê duyệt \\ \hline
+Sản phẩm OOAD & Có tài liệu thiết kế, sơ đồ & Ít & Không định sẵn & Use case, mô hình miền, 4 loại sơ đồ, mã bốn tầng \\ \hline
+Truy vết use case đến kiểm thử & Không nêu & Không nêu & Không nêu & Ma trận lập từ kiểm thử đã chạy \\ \hline
+Kiểm tra kiến trúc của mã sinh ra & Không nêu & Không nêu & Không nêu & Luật phân lớp, độ phức tạp, chỉ số bảo trì \\ \hline
+Thiết kế OOAD của chính hệ thống & Không phải trọng tâm & Không phải trọng tâm & Khung lập trình & Có mô hình miền, 39 sơ đồ, độ bao phủ đo được \\ \hline
+Tính năng doanh nghiệp & Không & Không & Không & RBAC, kiểm toán, khoá API, webhook, ngân sách \\ \hline
+\end{tabularx}
+\end{table}
+
+Nhìn vào bảng có thể thấy ba chỗ còn trống. Một là các hệ thống hiện có ít khi được trình bày như một sản phẩm OOAD, với mô hình miền, mẫu thiết kế gắn vấn đề cụ thể và kiểm thử có độ bao phủ đo được. Hai là sản phẩm của tác tử thường thiếu chuỗi truy vết từ use case qua thiết kế tới kiểm thử đã chạy, và thiếu một bước kiểm tra xem mã có theo đúng kiến trúc đã vẽ hay không. Ba là việc đánh giá thường chỉ nhìn tỉ lệ thành công chung. Hiếm khi từng vai trò được chấm riêng theo tiêu chí hợp với nó, và cũng hiếm khi dự báo được đem so với kết quả thật. Khoá luận lần lượt xử lý cả ba chỗ này, với giới hạn đã nói là các phép đo dùng LLM kịch bản.

@@ -1,0 +1,31 @@
+@startuml
+!include _style.iuml
+participant "WorkflowEngine" as E
+queue "Hàng đợi BullMQ" as Q
+participant "AgentTaskStrategy" as S
+participant "BaseAgent (DEV)" as A
+participant "AgentLLMService" as F
+participant "UsageTrackingLLMProvider" as D
+database "PostgreSQL" as DB
+E -> E : kiểm tra ngân sách
+alt ngân sách đã hết
+  E -> DB : lượt chạy → PAUSED
+else còn ngân sách
+  E -> Q : thêm công việc của nút
+  Q -> S : execute(node, run)
+  S -> A : execute(ctx)
+  A -> A : IDLE → THINKING
+  A -> F : providerFor(profile)
+  F --> A : nhà cung cấp đã bọc decorator
+  A -> D : chat(lời nhắc)
+  D -> DB : ghi ApiUsageLog,\ncộng chi phí nguyên tử
+  D --> A : câu trả lời
+  A -> A : THINKING → ACTING → COMPLETED
+  A --> S : AgentResult
+  S --> Q : NodeResult
+  Q -> E : handleJobCompletion
+  E -> DB : ghi WorkflowStep (durationMs)
+  E -> DB : lưu memento
+  E -> E : chọn cạnh kế tiếp
+end
+@enduml

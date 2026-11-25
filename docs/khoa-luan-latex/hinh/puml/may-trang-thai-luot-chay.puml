@@ -1,0 +1,16 @@
+@startuml
+!include _style.iuml
+hide empty description
+[*] --> RUNNING : bắt đầu quy trình
+RUNNING --> RUNNING : nút xong / ghi bước,\nchụp memento, chọn cạnh
+RUNNING --> PAUSED : gặp nút phê duyệt\nhoặc hết ngân sách\nhoặc người dùng tạm dừng
+PAUSED --> RUNNING : đã duyệt / tiếp tục\n[không chờ duyệt, còn ngân sách]
+PAUSED --> PAUSED : khôi phục về ảnh chụp
+RUNNING --> COMPLETED : tới nút kết thúc
+RUNNING --> FAILED : thử lại 3 lần vẫn lỗi\n[không có cạnh onFail]
+RUNNING --> CANCELLED : người dùng huỷ
+PAUSED --> CANCELLED : người dùng huỷ
+COMPLETED --> [*]
+FAILED --> [*]
+CANCELLED --> [*]
+@enduml
